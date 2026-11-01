@@ -55,6 +55,8 @@ state and a different size pattern of cod predation on sprat.
 | [`R/build_model.R`](R/build_model.R) | Model definition and the code that finds both steady states |
 | [`R/analysis_functions.R`](R/analysis_functions.R) | Life-stage biomasses, cod invasion fitness R0, immigration, fishing-effort continuation |
 | `model/` | The two steady states as saved `MizerParams` objects (`readParams()`) |
+| [`R/combined_model.R`](R/combined_model.R) | Prototype: the model with cod eggs and larvae, which sprat eat, so that it also shows cultivation–depensation |
+| [`combined/`](combined/README.md) | The prototype's driver script, results and figures, and a write-up |
 | `original_paper.pdf` | The paper |
 
 The `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and `MIZER-AGENTS.md` files and the

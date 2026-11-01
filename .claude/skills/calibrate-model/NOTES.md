@@ -18,3 +18,10 @@
 - `projectUntilSettled()` with its default `distance_tol` stops about 0.5 %
   short of the fixed point. Use `distance_tol = 0.001` (as `scanModel()` does)
   when points must lie on a smooth curve.
+- To hold the cod state fixed while changing cod egg/larval parameters (the
+  combined model, `R/combined_model.R`): with `R_max = Inf` every steady state
+  has R0 = 1, so `erepro` selects the state. Copy the original state in,
+  rescale `erepro` by 1/R0 there, then polish with
+  `findSteadyState(solver = "newton")`. Cod biomass stays within about 2 %.
+  The cod-free state needs no recalculation: it does not depend on any cod
+  parameter.
