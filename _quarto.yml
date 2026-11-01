@@ -1,0 +1,6 @@
+project:
+  # Rendered output goes to docs/, which GitHub Pages publishes
+  output-dir: docs
+  # Render only the document, not README.md
+  render:
+    - how_cod_shapes_its_world.qmd

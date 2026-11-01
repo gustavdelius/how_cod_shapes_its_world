@@ -1,0 +1,742 @@
+---
+title: "How cod shapes its world"
+subtitle: "A mizer size-spectrum model of the emergent Allee effect described by Van Leeuwen, De Roos & Persson (2008)"
+date: today
+# Rendered to docs/index.html (see _quarto.yml) for GitHub Pages
+output-file: index.html
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    code-fold: true
+    code-summary: "Code"
+    embed-resources: true
+    fig-width: 8
+    fig-height: 4.5
+    fig-dpi: 110
+execute:
+  cache: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| cache: false
+library(mizer)
+library(ggplot2)
+library(patchwork)
+options(mizer_info_level = 0)
+source("R/build_model.R")
+source("R/analysis_functions.R")
+
+col_state <- c("With cod" = "#2a78d6", "Without cod" = "#eb6834")
+col_stage <- c("Juveniles" = "#2a78d6", "Small adults" = "#eb6834",
+               "Large adults" = "#1baf7a")
+lty_stage <- c("Juveniles" = "solid", "Small adults" = "longdash",
+               "Large adults" = "dotted")
+theme_set(theme_minimal(base_size = 12) +
+              theme(panel.grid.minor = element_blank(),
+                    legend.position = "top",
+                    strip.text = element_text(face = "bold", hjust = 0)))
+fmt <- function(x, digits = 2) format(signif(x, digits), big.mark = ",",
+                                      scientific = FALSE, trim = TRUE)
+fmt_sci <- function(x, digits = 3) format(signif(x, digits), scientific = TRUE)
+```
+
+```{r}
+#| label: build
+params <- new_cod_sprat_params()
+params_no_cod <- cod_free_state(params)
+params_cod <- cod_state(params)
+states <- list(`With cod` = params_cod, `Without cod` = params_no_cod)
+
+# Indices and reference values used in the text
+i_cod <- params@w_min_idx[["Cod"]]           # cod recruitment size class
+w_cod_min <- w(params)[i_cod]
+i_sprat5 <- which.min(abs(w(params) - 5))    # sprat at maturity size
+f_crit <- getCriticalFeedingLevel(params_cod)
+R0_with <- getR0(params_cod)
+R0_without <- getR0(params_no_cod)
+rdi_ratio <- getRDI(params_cod)[["Sprat"]] / getRDI(params_no_cod)[["Sprat"]]
+small_sprat <- sapply(states, function(p)
+    getBiomass(p, max_w = 0.1)[["Sprat"]])
+```
+
+# Summary
+
+Van Leeuwen, De Roos & Persson (2008) argued that collapsed cod stocks may fail
+to recover even when fishing stops, because cod shapes the size structure of its
+prey to its own benefit. Cod predation thins the sprat population, which relaxes
+the competition for food among the surviving sprat. They then grow and reproduce
+faster, so more small sprat are produced, and small sprat are the food that
+juvenile cod need. Without cod, sprat become a stunted population of
+food-limited adults that produce few young. Juvenile cod then starve in a sea
+full of fish. The result is an **emergent Allee effect**: cod do well at high
+density and cannot increase from low density, so the community has two
+alternative stable states.
+
+This document describes a two-species mizer model, cod feeding on sprat that
+feed on plankton, that reproduces this mechanism. All the density dependence in
+the model is emergent: recruitment has no imposed stock–recruitment ceiling
+(`R_max = Inf`). With identical parameters the model has
+
+* a **stable cod–sprat state**, and
+* a **stable sprat-only state** that cod cannot invade: their invasion fitness
+  there is $R_0 = `r fmt(R0_without)`$ (in the cod state it is
+  $`r fmt(R0_with, 3)`$).
+
+In the cod state sprat recruitment is **`r fmt(rdi_ratio)` times higher** than
+in the sprat-only state, and the biomass of the smallest sprat (below 0.1 g) is
+`r fmt(small_sprat[1] / small_sprat[2])` times higher. That is enough to lift
+newly settled cod above their critical feeding level. Without cod they stay
+below it, so they cannot grow at all.
+
+The model reproduces the main predictions of the paper:
+
+* A fishing ramp collapses the cod stock, and the collapse continues after
+  fishing stops, even with continual immigration of cod.
+* Cod biomass shows hysteresis with respect to fishing effort.
+* Cod introduced into the sprat-only state establish only above a threshold
+  abundance.
+* Thinning the prey, here with a temporary sprat fishery, restores cod. This is
+  the management option the paper suggested.
+
+It does not reproduce every detail. The [comparison with the
+paper](#comparison) below lists the differences.
+
+# The mechanism in the paper
+
+Van Leeuwen et al. (2008) used a stage-structured biomass model with three life
+stages each for cod and sprat: juveniles, small adults and large adults. Food
+intake drives maturation, growth and reproduction. Its two key ingredients are:
+
+1. **Food-dependent growth and reproduction of the prey, with juveniles more
+   efficient than adults.** Juvenile sprat have a higher ratio of maximum
+   intake to maintenance than adult sprat, so when sprat compete for their
+   shared zooplankton the adults are the first to run short. A sprat population
+   without predators is limited by adult reproduction. It piles up as stunted
+   small adults that barely reproduce, and it holds few juveniles.
+2. **Size-selective predation by cod.** Juvenile cod can only eat small sprat.
+   Adult cod eat all sizes.
+
+With cod present, predation keeps sprat numbers down. The survivors have plenty
+of food, so they grow quickly and reproduce at a high rate, and the population
+produces many young sprat. Juvenile cod need exactly those young sprat. Cod
+therefore "farm" their own food supply. After a collapse of cod, the sprat
+population reverts to its stunted state, juvenile cod find too few small prey
+to grow and mature, and cod cannot recover. This holds even though total prey
+biomass is high, and even if fishing stops.
+
+# From a stage-structured model to a size-spectrum model
+
+Mizer represents each species by a continuous size spectrum rather than three
+stages, but its individual energetics contain the same ingredients:
+
+| Paper | mizer model |
+|:--|:--|
+| Three stages per species | Continuous size spectra, from 1 mg sprat larvae and 0.5 g settled cod to the maximum sizes |
+| Shared chemostat resource for all sprat stages | mizer's semichemostat plankton spectrum. Larger sprat eat larger plankton, which regrows more slowly ($r_R \propto w^{-1/3}$), so adult sprat deplete their food first. **The juvenile–adult asymmetry in food competition emerges from the size structure** |
+| Size-dependent maturation and fecundity | Food-dependent growth and reproduction, both from mizer's energy budget (`alpha`, `h`, `ks`, maturity ogive) |
+| Cod diet weights $q$ on sprat stages | Lognormal feeding kernel of cod (`beta = 30`, `sigma = 1.5`) on sprat. No cannibalism |
+| Alternative resources $R_J$, $R_A$ that cannot sustain cod alone | A fixed external encounter rate (`E_ext`) giving cod a feeding level of about 0.1, roughly half its critical feeding level |
+| Background mortality $\mu$ | `z0` + `z_ext` $w^{-1/3}$ |
+| No egg/larval interactions | Cod enter at 0.5 g. Larval survival is folded into `erepro` |
+| Population-level density dependence only through food and predation | `R_max = Inf` for both species, so **no imposed stock–recruitment relation** |
+| Fishing mortality $F\mu$ on adults, $\rho F \mu$ on juveniles | A length-selective trawl on cod ($l_{50}$ = 35 cm), whose effort equals $F$ on fully selected cod |
+
+# Model specification
+
+The model is built by `R/build_model.R`. The species parameters are below.
+Parameters not given explicitly (`h`, `ks`, sprat `gamma`, `n`, `p`, `q`,
+`alpha`, …) are mizer's defaults, derived from the given ones.
+
+```{r}
+#| label: tbl-species
+#| tbl-cap: "Species parameters. Sprat γ and both species' h and ks are mizer defaults (h from the age at maturity, ks from a critical feeding level of 0.2 at maturity)."
+sp <- species_params(params_cod)
+desc <- c(
+    w_min = "Size at recruitment (g)",
+    w_mat = "Maturity size (g)",
+    w_inf = "Asymptotic size (g)",
+    age_mat = "Age at maturity used to set h (yr)",
+    h = "Max. intake coefficient (g^(1-n)/yr)",
+    gamma = "Search volume coefficient",
+    ks = "Standard metabolism coefficient",
+    beta = "Preferred predator/prey mass ratio",
+    sigma = "Width of feeding kernel",
+    interaction_resource = "Feeding on plankton",
+    E_ext = "Alternative food: encounter coefficient",
+    z0 = "Background mortality, constant part (1/yr)",
+    z_ext = "Background mortality, coefficient of w^(-1/3)",
+    erepro = "Reproductive efficiency",
+    R_max = "Max. recruitment (no imposed density dependence)")
+tab <- data.frame(
+    Parameter = names(desc),
+    Description = unname(desc),
+    Sprat = sapply(names(desc), function(x) format(signif(sp["Sprat", x], 3))),
+    Cod = sapply(names(desc), function(x) format(signif(sp["Cod", x], 3))))
+knitr::kable(tab, row.names = FALSE)
+```
+
+The other components are:
+
+* **Feeding links.** Only cod eat sprat (interaction 1). Sprat eat no fish.
+  Cod do not eat cod and do not eat plankton.
+* **Plankton.** The default mizer resource: semichemostat dynamics with capacity
+  $\kappa w^{-\lambda}$ (κ = `r fmt_sci(resource_params(params)$kappa)`,
+  λ = `r resource_params(params)$lambda`) up to
+  `r resource_params(params)$w_pp_cutoff` g, and regrowth rate
+  `r resource_params(params)$r_pp` $w^{-1/3}$ per year. Only sprat eat it.
+* **Alternative food for cod.** `ext_encounter` = $2.5\,w^{n}$. On its own it
+  gives cod a feeding level of `r fmt(2.5 / (2.5 + sp["Cod", "h"]), 2)`,
+  against a critical feeding level of
+  `r fmt(f_crit["Cod", i_cod], 2)`–`r fmt(max(f_crit["Cod", ]), 2)`. Cod
+  therefore need sprat to grow and reproduce, as in the paper, where the
+  alternative resources covered about half of maintenance.
+* **Fishing.** Two gears, both switched off in the reference states. "Trawl"
+  takes cod with a sigmoid length selectivity (50 % at 35 cm ≈ 430 g). "Sprat
+  trawl" takes sprat above 1 g. It is used only in the prey-thinning
+  experiment.
+* **Numerics.** 150 size classes, the default upwind scheme, and time step 0.1
+  year.
+
+Abundances are in mizer's arbitrary units, set by κ. Only relative values are
+meaningful.
+
+The **sprat-only state** is found by removing cod and projecting until the
+model settles. The **cod–sprat state** is found by adding a large cod
+population to the sprat-only state and projecting until it settles. Both
+attractors are polished with mizer's Newton solver and checked with an
+eigenvalue analysis in [Numerical checks](#numerical-checks).
+
+# Results
+
+## Two alternative stable states {#states}
+
+```{r}
+#| label: tbl-states
+#| tbl-cap: "The two steady states. They have identical parameters and differ only in their initial condition. Biomasses are in mizer's arbitrary units; 'ratio' is with cod / without cod."
+row_vals <- function(p) {
+    sb <- stage_biomass(p, "Sprat")
+    cb <- stage_biomass(p, "Cod")
+    c(getBiomass(p)[["Sprat"]], sb[1, ],
+      getBiomass(p, max_w = 0.1)[["Sprat"]],
+      getRDI(p)[["Sprat"]],
+      getFeedingLevel(p)["Sprat", i_sprat5],
+      getBiomass(p)[["Cod"]], cb[1, ],
+      getFeedingLevel(p)["Cod", i_cod],
+      getR0(p))
+}
+vals <- sapply(states, row_vals)
+labels <- c("Sprat biomass", "– juveniles (< 5 g)", "– small adults (5–7 g)",
+            "– large adults (> 7 g)", "Sprat biomass below 0.1 g",
+            "Sprat recruitment (per year)",
+            sprintf("Feeding level of 5 g sprat (critical: %.2f)",
+                    f_crit["Sprat", i_sprat5]),
+            "Cod biomass", "– juveniles (< 500 g)", "– small adults (0.5–4 kg)",
+            "– large adults (> 4 kg)",
+            sprintf("Feeding level of %.1f g cod (critical: %.2f)", w_cod_min,
+                    f_crit["Cod", i_cod]),
+            "Invasion fitness R0 of cod")
+# Ratios only for biomasses and recruitment, not for feeding levels or R0
+ratio <- vals[, 1] / vals[, 2]
+ratio[c(7, 12, 13)] <- NA
+ratio_text <- ifelse(!is.finite(ratio), "–",
+                     ifelse(ratio > 1000, "> 1000", sprintf("%.2f", ratio)))
+fmt_cell <- function(x) ifelse(abs(x) < 10, sprintf("%.3g", x),
+                               format(signif(x, 3), scientific = TRUE))
+knitr::kable(data.frame(
+    Quantity = labels,
+    `With cod` = fmt_cell(vals[, 1]),
+    `Without cod` = fmt_cell(vals[, 2]),
+    Ratio = ratio_text,
+    check.names = FALSE), align = "lrrr")
+```
+
+Both states are stable fixed points (see [Numerical checks](#numerical-checks)).
+They differ in how the sprat population is structured:
+
+* **Without cod**, sprat eat the plankton down until fish around the maturity
+  size are only just covering their maintenance. The feeding level of mature
+  sprat is at the critical feeding level, so they hardly grow or reproduce. The
+  population piles up just below the maturity size of 5 g (@fig-spectra), and
+  almost no sprat grow beyond 7 g. Recruitment is low and so is the density of
+  small sprat.
+* **With cod**, total sprat biomass is lower, but the remaining sprat feed
+  better at every size above about 0.05 g (@fig-feeding). Recruitment is
+  `r fmt(rdi_ratio)` times higher, the biomass of the smallest sprat is
+  `r fmt(small_sprat[1] / small_sprat[2])` times higher, and some sprat now
+  grow into large adults above 7 g.
+
+```{r}
+#| label: fig-spectra
+#| fig-cap: "Biomass size spectra (biomass density per log body size) of sprat and cod in the two steady states. Without cod the sprat biomass piles up just below the maturity size (5 g) and stops abruptly above it. With cod there is less sprat in total, but more small sprat, and some sprat grow beyond 7 g."
+spec <- do.call(rbind, lapply(names(states), function(s) {
+    p <- states[[s]]
+    do.call(rbind, lapply(c("Sprat", "Cod"), function(sp) {
+        sel <- w(p) >= species_params(p)[sp, "w_min"] &
+            w(p) <= species_params(p)[sp, "w_max"]
+        data.frame(state = s, species = sp, w = w(p)[sel],
+                   biomass = (initialN(p)[sp, ] * w(p)^2)[sel])
+    }))
+}))
+spec$species <- factor(spec$species, levels = c("Sprat", "Cod"))
+spec <- spec[spec$biomass > 1e-6 * max(spec$biomass), ]
+ggplot(spec, aes(w, biomass, colour = state)) +
+    geom_line(linewidth = 0.9) +
+    facet_wrap(~species, scales = "free") +
+    scale_x_log10() + scale_y_log10() +
+    scale_colour_manual(values = col_state, name = NULL) +
+    labs(x = "Body weight (g)", y = "Biomass density per log size")
+```
+
+```{r}
+#| label: fig-feeding
+#| fig-cap: "Feeding level of sprat and cod across body size in the two states. The grey dashed line is the critical feeding level, the feeding level at which intake just covers metabolism. In the cod-free state the curve for cod is the feeding level that a rare cod would experience. Newly settled cod (0.5 g) are below the critical level without cod and above it with cod."
+fl <- do.call(rbind, lapply(names(states), function(s) {
+    p <- states[[s]]
+    do.call(rbind, lapply(c("Sprat", "Cod"), function(sp) {
+        sel <- w(p) >= species_params(p)[sp, "w_min"] &
+            w(p) <= species_params(p)[sp, "w_inf"]
+        data.frame(state = s, species = sp, w = w(p)[sel],
+                   f = getFeedingLevel(p)[sp, sel])
+    }))
+}))
+crit <- do.call(rbind, lapply(c("Sprat", "Cod"), function(sp) {
+    sel <- w(params) >= species_params(params)[sp, "w_min"] &
+        w(params) <= species_params(params)[sp, "w_inf"]
+    data.frame(species = sp, w = w(params)[sel], f = f_crit[sp, sel])
+}))
+fl$species <- factor(fl$species, levels = c("Sprat", "Cod"))
+crit$species <- factor(crit$species, levels = c("Sprat", "Cod"))
+ggplot(fl, aes(w, f)) +
+    geom_line(data = crit, colour = "grey45", linetype = "dashed") +
+    geom_line(aes(colour = state), linewidth = 0.9) +
+    facet_wrap(~species, scales = "free_x") +
+    scale_x_log10() +
+    scale_colour_manual(values = col_state, name = NULL) +
+    coord_cartesian(ylim = c(0, 1)) +
+    labs(x = "Body weight (g)", y = "Feeding level")
+```
+
+## Why cod cannot come back
+
+The bottleneck is the smallest cod. A newly settled 0.5 g cod eats sprat of
+roughly 0.005–0.1 g, which are larvae and early juveniles. In the cod-free state
+these are scarce, because the stunted adult sprat produce few young. The
+feeding level of a 0.5 g cod is then
+`r fmt(getFeedingLevel(params_no_cod)["Cod", i_cod], 2)`, below its critical
+feeding level of `r fmt(f_crit["Cod", i_cod], 2)`. In mizer the net energy
+available for growth is then zero, so the cod cannot grow at all. Their
+lifetime reproductive output is $R_0 = `r fmt(R0_without)`$, and no rare cod
+population can increase. In the cod state the same size class feeds at
+`r fmt(getFeedingLevel(params_cod)["Cod", i_cod], 2)`, enough to grow.
+
+Larger cod would actually find *more* food in the cod-free state, because the
+stunted sprat of 1–5 g are abundant there and no other cod compete for them
+(@fig-feeding). This is the paradox the paper emphasised: prey biomass is
+high, yet cod cannot use it, because they never grow past the first few grams.
+
+@fig-growth shows the consequence for growth. It also shows the paper's other
+prediction, that sprat grow more slowly in body size after cod has gone.
+
+```{r}
+#| label: fig-growth
+#| fig-height: 3.8
+#| fig-cap: "Size at age of sprat and cod in the two states. In the cod-free state a newly settled cod cannot grow, because its food intake does not cover its metabolism."
+gc <- do.call(rbind, lapply(names(states), function(s) {
+    g <- getGrowthCurves(states[[s]], max_age = 15)
+    do.call(rbind, lapply(rownames(g), function(sp)
+        data.frame(state = s, species = sp,
+                   age = as.numeric(colnames(g)), w = g[sp, ])))
+}))
+gc$species <- factor(gc$species, levels = c("Sprat", "Cod"))
+ggplot(gc, aes(age, w, colour = state)) +
+    geom_line(linewidth = 0.9) +
+    facet_wrap(~species, scales = "free_y") +
+    scale_y_log10() +
+    scale_colour_manual(values = col_state, name = NULL) +
+    labs(x = "Age (years)", y = "Body weight (g)")
+```
+
+## Predation alone is enough {#prey-only}
+
+Is it really the predation mortality that cultivates the food? To find out, we
+remove cod and instead impose on sprat a fixed extra mortality with the same
+size profile as cod's predation in the cod state, scaled by a factor between 0
+and 1. We then compute the steady state of sprat and the food environment it
+would offer to a rare cod.
+
+```{r}
+#| label: tbl-prey-only
+#| tbl-cap: "Sprat-only model with an imposed mortality equal to a fraction of cod's predation mortality in the cod state. Recruitment and small-sprat biomass are relative to the case without extra mortality. The last two columns describe the food environment of a rare cod."
+pred_mort <- getPredMort(params_cod)["Sprat", ]
+fractions <- c(0, 0.05, 0.1, 0.2, 0.3, 1)
+prey_only <- do.call(rbind, lapply(fractions, function(fr) {
+    p <- params_no_cod
+    em <- ext_mort(p)
+    em["Sprat", ] <- em["Sprat", ] + fr * pred_mort
+    ext_mort(p) <- em
+    sim <- projectUntilSettled(p, t_max = 500, progress_bar = FALSE,
+                               info_level = 0)
+    p <- finalParams(sim)
+    data.frame(fraction = fr,
+               attractor = attr(sim, "convergence")$attractor,
+               rdi = getRDI(p)[["Sprat"]],
+               small = getBiomass(p, max_w = 0.1)[["Sprat"]],
+               f_cod = getFeedingLevel(p)["Cod", i_cod],
+               R0 = getR0(p))
+}))
+knitr::kable(data.frame(
+    `Fraction of cod predation` = prey_only$fraction,
+    `Sprat recruitment` = sprintf("%.2f", prey_only$rdi / prey_only$rdi[1]),
+    `Sprat biomass < 0.1 g` = sprintf("%.2f", prey_only$small / prey_only$small[1]),
+    `Feeding level of 0.5 g cod` = sprintf("%.3f", prey_only$f_cod),
+    `R0 of a rare cod` = sprintf("%.2f", prey_only$R0),
+    check.names = FALSE), align = "rrrrr")
+```
+
+As the imposed mortality increases, sprat recruitment and the density of small
+sprat increase. The feeding level of newly settled cod crosses the critical
+level of `r fmt(f_crit["Cod", i_cod], 2)`, and the invasion fitness of cod
+rises above 1. Already
+`r 100 * min(prey_only$fraction[prey_only$R0 > 1])` % of cod's own predation
+pressure is enough. This is the overcompensation of De Roos et al. (2007): in a
+population limited by adult reproduction, extra mortality raises the
+production of young. At the full cod predation pressure the sprat population
+is the one in the cod state, where cod are exactly replacing themselves
+($R_0$ ≈ 1). For fractions between about 0.4 and 0.8 (not shown), the
+sprat-only model with fixed extra mortality settles on a limit cycle.
+
+## An Allee threshold {#threshold}
+
+An Allee effect implies a threshold. Cod introduced into the cod-free state
+must arrive in sufficient numbers to reshape the sprat population before they
+die out. @fig-introductions starts from the cod-free state and adds cod with
+the size distribution of the cod-state population, scaled by different factors.
+
+```{r}
+#| label: fig-introductions
+#| fig-cap: "Cod biomass after cod are introduced into the cod-free state, with the size distribution of the equilibrium cod population scaled by the factor shown. Introductions of 20 % or less die out. 30 % and more establish the cod state. Very large introductions (2×) also fail: the cod first eat down the sprat and then starve."
+intro_factors <- c(0.1, 0.2, 0.3, 0.5, 1, 2)
+intro <- do.call(rbind, lapply(intro_factors, function(fac) {
+    p <- params_no_cod
+    n <- initialN(p)
+    n["Cod", ] <- initialN(params_cod)["Cod", ] * fac
+    initialN(p) <- n
+    sim <- project(p, t_max = 80, t_save = 0.5, progress_bar = FALSE)
+    data.frame(factor = paste0(fac, "×"), time = getTimes(sim),
+               cod = getBiomass(sim)[, "Cod"])
+}))
+intro$factor <- factor(intro$factor, levels = paste0(intro_factors, "×"))
+blues <- c("#86b6ef", "#5598e7", "#2a78d6", "#1c5cab", "#104281", "#0d366b")
+ggplot(intro, aes(time, cod, colour = factor)) +
+    geom_line(linewidth = 0.9) +
+    geom_hline(yintercept = getBiomass(params_cod)[["Cod"]],
+               colour = "grey45", linetype = "dashed") +
+    scale_y_log10() +
+    coord_cartesian(ylim = c(1e8, 3e13)) +
+    scale_colour_manual(values = blues, name = "Introduced") +
+    labs(x = "Years after introduction", y = "Cod biomass") +
+    guides(colour = guide_legend(nrow = 1))
+```
+
+## Collapse under fishing, and no recovery {#ramp}
+
+This is the analogue of Fig. 3 of the paper. Starting from the cod state, the
+cod fishing mortality is zero for 20 years. It then rises linearly to
+$F = 0.8$/yr over 40 years, and stops completely at year 60. As in the paper,
+a small immigration of cod is included, so that recovery would be possible if
+the dynamics allowed it. Here this is a constant inflow of recruits equal to
+1 % of the cod-state recruitment.
+
+```{r}
+#| label: fig-ramp
+#| fig-height: 7
+#| fig-cap: "Response of the cod–sprat community to a period of increasing fishing on cod (top, shaded). Cod collapse during the fishing period and keep declining after fishing has stopped. Only the immigrating juveniles remain, and they cannot grow, so adult cod disappear. Without cod, sprat biomass shifts towards stunted fish around the maturity size, and large adult sprat (> 7 g) disappear. The y axes are cut off below; stages that die out continue to decline."
+p_ramp <- set_cod_immigration(params_cod, 0.01 * getRDD(params_cod)[["Cod"]])
+times <- 0:150
+F_ramp <- ifelse(times < 20, 0, ifelse(times < 60, 0.8 * (times - 20) / 40, 0))
+effort <- array(c(F_ramp, rep(0, length(times))),
+                dim = c(length(times), 2),
+                dimnames = list(time = times, gear = c("Trawl", "Sprat trawl")))
+sim_ramp <- project(p_ramp, effort = effort, t_save = 0.5, progress_bar = FALSE)
+
+stage_df <- function(sim, species) {
+    b <- stage_biomass(sim, species)
+    data.frame(time = rep(getTimes(sim), ncol(b)),
+               stage = factor(rep(colnames(b), each = nrow(b)),
+                              levels = names(col_stage)),
+               biomass = as.vector(b), species = species)
+}
+fishing_band <- annotate("rect", xmin = 20, xmax = 60, ymin = -Inf,
+                         ymax = Inf, fill = "grey92")
+p_F <- ggplot(data.frame(time = times, F = F_ramp), aes(time, F)) +
+    fishing_band + geom_step(linewidth = 0.9, colour = "grey20") +
+    labs(x = NULL, y = "Cod fishing\nmortality (1/yr)")
+# Stages that die out decay towards zero for ever; the y range is cut so that
+# the dynamics of the rest stay readable
+stage_plot <- function(species, ylab, ylim) {
+    ggplot(stage_df(sim_ramp, species),
+           aes(time, biomass, colour = stage, linetype = stage)) +
+        fishing_band + geom_line(linewidth = 0.9) +
+        scale_y_log10() +
+        coord_cartesian(ylim = ylim) +
+        scale_colour_manual(values = col_stage, name = NULL) +
+        scale_linetype_manual(values = lty_stage, name = NULL) +
+        labs(x = NULL, y = ylab)
+}
+(p_F / stage_plot("Cod", "Cod biomass", c(1e6, 1e13)) /
+        (stage_plot("Sprat", "Sprat biomass", c(1e8, 1e14)) +
+             labs(x = "Year"))) +
+    plot_layout(heights = c(1, 2, 2), guides = "collect") &
+    theme(legend.position = "top")
+```
+
+```{r}
+#| label: ramp-numbers
+p_end <- finalParams(sim_ramp)
+```
+
+At the end of the run, 90 years after fishing stopped, cod biomass is
+`r fmt_sci(getBiomass(p_end)[["Cod"]], 2)`, compared with
+`r fmt_sci(getBiomass(params_cod)[["Cod"]], 2)` before fishing. The invasion
+fitness of cod is $R_0 = `r fmt(getR0(p_end))`$: the immigrants settle into a
+sprat population in which they cannot grow.
+
+## Hysteresis in fishing effort {#hysteresis}
+
+This is the analogue of Fig. 5 (top) of the paper. The cod state is followed
+with mizer's `scanModel()` as the cod fishing effort increases in small steps.
+Each step starts from the state reached at the previous one.
+
+```{r}
+#| label: scan
+cod_values <- function(sim) {
+    cbind(`Cod biomass` = getBiomass(sim)[, "Cod"],
+          `Cod yield` = getYield(sim)[, "Cod"],
+          `Sprat recruitment` = getRDI(sim)[, "Sprat"])
+}
+F_values <- c(seq(0, 0.375, by = 0.025), 0.38, 0.385, 0.39, 0.395, 0.4,
+              0.425, 0.45)
+scan_up <- scanModel(params_cod, scan_values = F_values,
+                     set_func = scanEffort("Trawl"), value_func = cod_values,
+                     t_max = 400)
+scan_up <- as.data.frame(scan_up)
+names(scan_up)[1:3] <- c("F", "value", "quantity")
+F_limit <- max(scan_up$F[scan_up$quantity == "Cod biomass" &
+                             scan_up$value > 1e-3 * getBiomass(params_cod)[["Cod"]]])
+F_next <- min(F_values[F_values > F_limit])
+```
+
+```{r}
+#| label: fig-hysteresis
+#| fig-height: 6
+#| fig-cap: "Steady states as a function of the fishing mortality on cod. Blue: the cod–sprat state, followed from F = 0 upwards. It persists up to the persistence limit (dashed line) and then collapses. Orange: the cod-free state, which is stable at every F. Reducing fishing after a collapse leaves the system on the orange branch."
+no_cod_rdi <- getRDI(params_no_cod)[["Sprat"]]
+branches <- rbind(
+    data.frame(F = scan_up$F, quantity = scan_up$quantity,
+               value = scan_up$value, branch = "With cod")[
+                   scan_up$F <= F_limit, ],
+    data.frame(F = rep(range(F_values), 3),
+               quantity = rep(c("Cod biomass", "Cod yield",
+                                "Sprat recruitment"), each = 2),
+               value = rep(c(0, 0, no_cod_rdi), each = 2),
+               branch = "Without cod"))
+ggplot(branches, aes(F, value, colour = branch)) +
+    geom_vline(xintercept = F_limit, colour = "grey45", linetype = "dashed") +
+    geom_line(linewidth = 0.9) +
+    geom_point(data = branches[branches$branch == "With cod", ], size = 1.6) +
+    facet_wrap(~quantity, ncol = 1, scales = "free_y") +
+    scale_colour_manual(values = col_state, name = NULL) +
+    expand_limits(y = 0) +
+    labs(x = "Fishing mortality on cod (1/yr)", y = NULL)
+```
+
+The persistence limit lies between $F = `r F_limit`$ and $`r F_next`$/yr.
+Beyond it no cod state exists, and the system falls to the cod-free state. That
+state has $R_0 = 0$ at every fishing level, so reducing fishing cannot reverse
+the collapse. Along the cod branch the cod yield increases with fishing almost
+up to the persistence limit, so the stock gives no warning of the coming
+collapse: yield is highest just before it.
+
+## Thinning the prey brings cod back {#thinning}
+
+Van Leeuwen et al. suggested that if the prey population's size structure is
+what keeps cod down, then **thinning the prey** should help cod recover. The
+[prey-only experiment](#prey-only) suggests that this works in the mizer model
+too. Here we test it with the sprat trawl, which takes sprat above 1 g at
+$F = 0.5$/yr. It runs for 20 or 30 years, starting in the cod-free state with
+the same small immigration of cod as above.
+
+```{r}
+#| label: fig-thinning
+#| fig-cap: "Cod biomass in the cod-free state (with immigration) when a sprat fishery (F = 0.5/yr on sprat above 1 g) operates from year 10 for 20 or 30 years (shaded). Thirty years of prey thinning take cod past the Allee threshold, and cod then persist after the sprat fishery stops. Twenty years are not enough."
+p_thin <- set_cod_immigration(params_no_cod,
+                              0.01 * getRDD(params_cod)[["Cod"]])
+p_thin <- settle(p_thin)
+thin <- do.call(rbind, lapply(c(20, 30), function(duration) {
+    times <- 0:150
+    F_sprat <- ifelse(times >= 10 & times < 10 + duration, 0.5, 0)
+    effort <- array(c(rep(0, length(times)), F_sprat),
+                    dim = c(length(times), 2),
+                    dimnames = list(time = times,
+                                    gear = c("Trawl", "Sprat trawl")))
+    sim <- project(p_thin, effort = effort, t_save = 0.5, progress_bar = FALSE)
+    data.frame(scenario = paste(duration, "years of sprat fishing"),
+               time = getTimes(sim), cod = getBiomass(sim)[, "Cod"])
+}))
+ggplot(thin, aes(time, cod, colour = scenario)) +
+    annotate("rect", xmin = 10, xmax = 40, ymin = 0, ymax = Inf,
+             fill = "grey95") +
+    annotate("rect", xmin = 10, xmax = 30, ymin = 0, ymax = Inf,
+             fill = "grey88") +
+    annotate("text", x = 20, y = 2e8, label = "20 yr", size = 3.5,
+             colour = "grey30") +
+    annotate("text", x = 35, y = 2e8, label = "+10 yr", size = 3.5,
+             colour = "grey30") +
+    geom_line(linewidth = 0.9) +
+    geom_hline(yintercept = getBiomass(params_cod)[["Cod"]],
+               colour = "grey45", linetype = "dashed") +
+    scale_y_log10() +
+    scale_colour_manual(values = unname(col_state), name = NULL) +
+    labs(x = "Year", y = "Cod biomass")
+```
+
+The prey fishery has to last long enough for cod to pass the Allee threshold.
+After that, the cod population keeps the sprat thinned by itself.
+
+# How the mizer model compares with the paper {#comparison}
+
+**What the model reproduces:**
+
+* Two alternative stable states with identical parameters, one with cod and
+  one without. Cod cannot invade the cod-free state ($R_0 = 0$).
+* A stunted sprat population without cod, its biomass piled up around the
+  maturity size, with low recruitment and almost no large adults. With cod,
+  sprat recruitment and small-sprat density are much higher, and large adult
+  sprat appear.
+* Juvenile cod starving in the cod-free state despite a high total sprat
+  biomass. Slower sprat growth after the cod collapse.
+* Collapse under increasing fishing that continues after fishing stops,
+  hysteresis with respect to fishing, and recovery after prey thinning.
+
+**Where it differs:**
+
+* **Which sprat sizes cod hit hardest.** In the paper, juvenile sprat bear the
+  highest predation risk, and the cod state has a U-shaped sprat population
+  dominated by large adults. In this model the per-capita predation mortality
+  that cod impose on sprat rises with sprat size, from
+  `r fmt(pred_mort[which.min(abs(w(params) - 0.01))], 2)`/yr at 0.01 g to
+  `r fmt(pred_mort[which.min(abs(w(params) - 1))], 2)`/yr at 1 g and
+  `r fmt(pred_mort[i_sprat5], 2)`/yr at 5 g. Large adult sprat exist only in
+  the cod state, as in the paper, but they are a small part of the biomass.
+  The cod-state sprat population is dominated by juveniles, so its size
+  distribution is not U-shaped. Cod release the competition mainly by thinning
+  the large juveniles and adults that make up the stunted bulk of the
+  population. Attempts to shift cod predation towards small sprat
+  by raising the cod predator–prey mass ratio to 60–100 destroyed the
+  bistability in this setting, because the cod state turned into
+  large-amplitude predator–prey cycles.
+* **Cod population structure.** The paper's cod state is dominated by juvenile
+  cod, whose maturation is food-limited. Here, cod that grow past the
+  bottleneck at the smallest sizes feed well (@fig-feeding), and cod biomass is
+  dominated by small adults.
+* **No increase of cod biomass with fishing.** The paper found that cod biomass
+  and yield can both increase with fishing over a wide range, especially at
+  high productivity. Here cod biomass decreases with fishing. Only yield
+  increases, as is usual. Sprat recruitment does stay high along the cod
+  branch.
+* **Stability needs a fairly high cod mortality.** With mizer's default-like
+  background mortality for adult cod (about 0.3/yr), the cod–sprat state is a
+  large-amplitude predator–prey limit cycle rather than a fixed point. It
+  still coexists with the stable cod-free state, so the Allee effect is there,
+  but cod come close to extinction in every cycle. A background mortality of
+  0.8/yr plus a size-dependent term makes cod a less efficient predator, and
+  the cod state becomes a stable fixed point. This is the classic
+  "paradox of enrichment" stabilisation. A Beverton–Holt recruitment ceiling
+  for cod can also stabilise the cycle, but only at reproduction levels of
+  about 0.8 or more, which imposes strong density dependence. It was
+  therefore not used. A Beverton–Holt relation cannot itself create an Allee
+  effect, because per-capita recruitment is highest at low density.
+* **A narrow parameter window.** Bistability with a stable cod state requires
+  the cod search volume to lie roughly between the fold of the cod branch and
+  the invasion threshold. At the chosen mortality the cod state is a stable
+  fixed point for search volumes of about 0.13–0.17 times mizer's default, and
+  it oscillates at higher values. Above about 0.25 times the default, cod can
+  invade the sprat-only state. The paper explored the corresponding window in
+  resource productivity, which is not repeated here.
+* **Strategic, not calibrated.** As in the paper, the parameters are plausible
+  for Baltic cod and sprat but not fitted to data. Abundances are in arbitrary
+  units.
+
+# Numerical checks {#numerical-checks}
+
+```{r}
+#| label: checks
+newton <- lapply(states, findSteadyState, solver = "newton", info_level = 0)
+stab <- lapply(newton, getStability)
+p_vl <- params_cod
+second_order_w(p_vl) <- c(flux = "van_leer")
+p_vl <- findSteadyState(p_vl, solver = "newton", info_level = 0)
+stab_vl <- getStability(p_vl)
+# Time-step sensitivity: project the cod state with half the default step
+sim_dt <- project(params_cod, t_max = 100, dt = 0.05, t_save = 100,
+                  progress_bar = FALSE)
+dt_change <- abs(1 - getBiomass(finalParams(sim_dt))[["Cod"]] /
+                     getBiomass(params_cod)[["Cod"]])
+check_tab <- data.frame(
+    State = c(names(states), "With cod, van Leer flux"),
+    `Newton residual (1/yr)` = sprintf("%.1e", c(
+        sapply(newton, function(p) attr(p, "convergence")$residual),
+        attr(p_vl, "convergence")$residual)),
+    `Max. real part of eigenvalues (1/yr)` = sprintf("%.3f", c(
+        sapply(stab, `[[`, "max_real_part"), stab_vl$max_real_part)),
+    `Cod biomass` = fmt_sci(c(sapply(newton, function(p) getBiomass(p)[["Cod"]]),
+                              getBiomass(p_vl)[["Cod"]])),
+    check.names = FALSE)
+knitr::kable(check_tab, align = "lrrr", row.names = FALSE)
+```
+
+* Both states found by projection are fixed points of the model. Mizer's Newton
+  solver converges on them, and the biomasses agree with the projected states.
+* `getStability()` gives negative real parts for all eigenvalues in both
+  states, so both are **locally stable**. The leading eigenvalues are complex
+  (the cod state rings with a period of about
+  `r fmt(stab[["With cod"]]$dominant_period, 2)` years). In the cod-free state
+  the eigenvalues include those for perturbations by rare cod, so their
+  negative sign is a second confirmation that cod cannot invade.
+* The default first-order upwind scheme carries numerical diffusion, which can
+  damp oscillations. Re-solving the cod state with the second-order van Leer
+  flux keeps it stable (last row of the table). Cod biomass moves by about
+  `r fmt(100 * abs(1 - getBiomass(p_vl)[["Cod"]] / getBiomass(newton[["With cod"]])[["Cod"]]), 2)` %.
+  Long *projections* with the van Leer flux currently fail: after about 250
+  simulated years they produce `NaN`. The cause is a mizer bug in
+  `flux_limiter_chi()`. A density difference that underflows to a subnormal
+  number makes the smoothness ratio infinite, and the van Leer limiter then
+  evaluates `Inf/Inf`. This affects mizer 3.4.0.9000 (master) and 3.4.0.9001
+  and is reported as [mizer issue
+  #630](https://github.com/sizespectrum/mizer/issues/630). It is the reason
+  the van Leer check above uses the Newton solver rather than a projection.
+* Projecting the cod state for 100 years with half the time step
+  (`dt = 0.05` instead of 0.1) changes cod biomass by
+  `r sprintf("%.1g", 100 * dt_change)` %.
+* The van Leer result shows that the abundances depend noticeably on the size
+  discretisation (150 size classes), but the qualitative picture does not.
+
+# Reproducing this document
+
+| File | Contents |
+|:--|:--|
+| `R/build_model.R` | Model definition; run it with `Rscript R/build_model.R` to write both states to `model/` |
+| `R/analysis_functions.R` | Life-stage biomass, invasion fitness $R_0$, immigration, effort continuation |
+| `how_cod_shapes_its_world.qmd` | This document; `quarto render` writes it to `docs/index.html` |
+
+Computed with mizer `r packageVersion("mizer")` and
+`r R.version.string`.
+
+**Reference.** Van Leeuwen, A., De Roos, A.M. & Persson, L. (2008). How cod
+shapes its world. *Journal of Sea Research* 60, 89–104.
+doi:10.1016/j.seares.2008.02.008
