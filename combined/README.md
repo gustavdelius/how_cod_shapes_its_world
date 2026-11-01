@@ -35,16 +35,47 @@ cod–sprat model:
   larvae, and cod do not eat cod. Those are the asymmetries that
   cultivation–depensation needs.
 
+### Numerics
+
+The numerics follow `paper.Rmd`, not the original model:
+
+* **Second-order scheme.** 320 size classes (Δ ln w = 0.053), a centred flux
+  and bin-averaged rates. The larval food and the senescence mortality are
+  bin-averaged by hand.
+* **Size diffusion** D(w) = D_ext w^(n+1), with D_ext = c (α f0 h − ks) and
+  c = 0.1. A juvenile cohort feeding at f0 = 0.6 then gains 0.1 in the
+  variance of ln w per unit of ln w it grows. Since c > Δ ln w, the centred
+  flux stays monotone.
+* **Senescence.** Species grids reach 2 w_inf, and a senescence mortality
+  0.5 (w/w_inf)^10 stops diffusion carrying adults beyond w_inf.
+* **Time stepping.** Projections use TR-BDF2 with Δt = 0.1 yr. Steady states
+  come from mizer's Newton solver and stability from `getStability()`.
+* **R0** comes from the steady state of the discretised transport equation
+  itself (`cod_R0()`, ported from `R0_from_rates()` in `paper.Rmd`'s
+  repository). The upwind recursion of this repository's `getR0()` is not
+  valid with diffusion.
+
+### Anchor states and `erepro`
+
+The two states of the original model (upwind, cod from 0.5 g) are
+interpolated onto the new grid, with cod eggs and larvae filled in. They are
+then solved again under the new numerics at the baseline: `w_shift` = 0.2 g
+and no larval predation (`combined_anchor()`).
+
 The original model folded cod egg and larval survival into `erepro`. That
 survival is now modelled, so cod `erepro` is recalibrated for every
-(`w_shift`, `θ`): it is rescaled until the cod state of the original model is
-a steady state again, and Newton's method then polishes the state. This works
-because with `R_max = Inf` every steady state has R0 = 1, so `erepro` selects
-the state. Across the scan, cod biomass stays within 2 % of the original and
-`erepro` ranges from 0.0004 to 0.0026. The cod-free state does not depend on
-any cod parameter, so it is the original one throughout. This mirrors
-`paper.Rmd`, which held its coexistence state (RFP) fixed while varying
-parameters.
+(`w_shift`, `θ`): it is rescaled until the anchor cod state is a steady state,
+and Newton's method then polishes it. This works because with `R_max = Inf`
+every steady state has R0 = 1, so `erepro` selects the state. Across the scan,
+cod biomass stays within 4 % of the anchor and `erepro` ranges from 0.0004 to
+0.012. The cod-free state does not depend on any cod parameter, so it is the
+same throughout. This mirrors `paper.Rmd`, which held its coexistence state
+(RFP) fixed while varying parameters.
+
+Started directly from the anchor, Newton's method finds a saddle at
+θ ≥ 0.025 for some `w_shift` (positive real eigenvalue, up to 30 % less cod).
+The scan therefore follows the cod state along increasing θ, starting each
+point from the solution at the previous θ.
 
 ## Telling the mechanisms apart
 
@@ -58,7 +89,7 @@ state has R0 = 1):
   Van Leeuwen et al. mechanism, and it is below 1 when juvenile cod starve.
 * **larval predation**: cod-state growth and cod-free mortality. This is
   cultivation–depensation, and it is below 1 when sprat eat more cod larvae.
-* **interaction** = R0 / (food × larval predation). It ranges from 0.42 to 1
+* **interaction** = R0 / (food × larval predation). It ranges from 0.74 to 1
   here. It is below 1 because hungry juvenile cod grow slowly, so they spend
   longer in the size range where sprat eat them. The two mechanisms amplify
   each other.
@@ -70,81 +101,101 @@ state has R0 = 1):
 **R0 of a rare cod in the cod-free state** over the diet-shift size and the
 strength of larval predation. The solid line is R0 = 1: below and to the right
 of it cod invade, and elsewhere the system is bistable. The dashed line is
-where the food factor alone equals 1. × marks a cod state that is unstable,
-where it becomes a limit cycle. Grey: no cod state found (see the caveats).
+where the food factor alone equals 1. × marks an unstable cod state.
 
-* **Food barrier alone** (θ = 0, `w_shift` < 0.46 g). At `w_shift` = 0.2 g
-  the cod state is the original model's: growth of cod stops at about 0.4 g in
-  the cod-free state, and R0 = 0. A later diet shift lets juvenile cod reach
-  the sizes at which stunted sprat still feed them. The food barrier leaks
-  (R0 = 0.04 at 0.25 g, 0.53 at 0.35 g) and fails at 0.46 g.
+* **Food barrier alone** (θ = 0, `w_shift` < 0.39 g).
+  * The barrier is not absolute: size diffusion carries some cod through the
+    sizes at which they starve, so R0 = 0.27 at `w_shift` = 0.1 g and 0.37 at
+    0.2 g.
+  * A later diet shift weakens it further (R0 = 0.70 at 0.3 g), and it fails
+    at about 0.39 g.
 * **Larval-predation barrier alone** (right of the dashed line, above the
-  solid one). Here food works *against* depensation: a rare cod in the
-  cod-free state grows *better* than in the cod state (food factor 1.1–1.7).
-  This is the situation in `paper.Rmd`. Larval predation alone keeps R0 below
-  1.
+  solid one).
+  * Here food works *against* depensation: a rare cod in the cod-free state
+    grows *better* than in the cod state (food factor 1.06–1.58). This is the
+    situation in `paper.Rmd`.
+  * Larval predation alone keeps R0 below 1, from θ ≈ 0.005–0.008.
 * **Both barriers** (left of the dashed line, θ > 0). Both factors are below
   1 and multiply.
 
+The cod state is stable at every point with θ ≤ 0.02 (max real part −0.003 to
+−0.175/yr). At `w_shift` = 0.1 g it loses stability gradually from
+θ ≈ 0.025, with a leading real part of +0.005 to +0.016/yr.
+
 | `w_shift` | θ | Food | Larval predation | Interaction | **R0** | Cod state (max Re, 1/yr) |
 |--:|--:|--:|--:|--:|--:|--:|
-| 0.2 g | 0 | 0 | 1 | – | **0** | −0.060 |
-| 0.45 g | 0.01 | 0.97 | 0.56 | 0.96 | **0.51** | −0.058 |
-| 0.6 g | 0 | 1.39 | 1 | 1 | **1.39** | −0.008 |
-| 0.6 g | 0.01 | 1.39 | 0.56 | 0.98 | **0.76** | −0.025 |
-| 0.6 g | 0.02 | 1.38 | 0.32 | 0.96 | **0.42** | −0.043 |
+| 0.2 g | 0 | 0.37 | 1 | 1 | **0.37** | −0.095 |
+| 0.3 g | 0.01 | 0.69 | 0.53 | 0.92 | **0.34** | −0.122 |
+| 0.5 g | 0 | 1.36 | 1 | 1 | **1.36** | −0.152 |
+| 0.5 g | 0.01 | 1.35 | 0.56 | 0.96 | **0.72** | −0.175 |
+| 0.5 g | 0.02 | 1.34 | 0.31 | 0.92 | **0.39** | −0.157 |
 
 ![Decomposition](decomposition.png)
 
-**Decomposition along two values of θ.** The larval-predation factor hardly
-depends on `w_shift`: it is 0.50–0.57 at θ = 0.01 and 0.26–0.32 at θ = 0.02. The
-food factor rises steeply with `w_shift`. Where it crosses 1, the barrier
-passes from shared to purely larval predation.
+**Decomposition along two values of θ.** The food factor rises steeply with
+`w_shift`. Where it crosses 1, the barrier passes from shared to purely larval
+predation. The larval-predation factor is 0.40–0.56 at θ = 0.01 and
+0.17–0.32 at θ = 0.02. It is lowest at early diet shifts: there, even in the
+cod state, juvenile cod grow slowly on sprat and spend longer within reach of
+sprat.
 
 ![Introductions](introductions.png)
 
 **Cod introduced into the cod-free state** at a fraction of the cod state's
-size distribution. The simulations agree with the invasion analysis:
+size distribution, projected with TR-BDF2. The simulations agree with the
+invasion analysis:
 
 | `w_shift`, θ | 1 % | 30 % | 100 % |
 |:--|:--|:--|:--|
-| 0.6 g, 0 | invades | establishes | establishes |
-| 0.6 g, 0.01 | dies out | establishes | establishes |
-| 0.6 g, 0.02 | dies out | dies out | establishes |
-| 0.45 g, 0.01 | dies out | establishes | establishes |
-| 0.2 g, 0 | dies out | dies out | dies out |
+| 0.5 g, 0 | invades | establishes | establishes |
+| 0.5 g, 0.01 | dies out | establishes | establishes |
+| 0.5 g, 0.02 | dies out | dies out | establishes |
+| 0.3 g, 0.01 | dies out | dies out | establishes |
+| 0.2 g, 0 | dies out | establishes | dies out (overshoot) |
 
-At `w_shift` = 0.6 g, larval predation creates the bistability that food alone
-no longer provides, and the Allee threshold rises with θ. The decline rates of
-the 1 % seeds match R0 with a cod generation time of about 5 years.
+At `w_shift` = 0.5 g, larval predation creates the bistability that food alone
+no longer provides, and the Allee threshold rises with θ.
+
+## Effect of the numerics
+
+The first version of this prototype (commit `161199e`) used the original
+model's numerics: upwind scheme, 150 size classes and no physical diffusion.
+The qualitative result is the same, but three things changed:
+
+* **The food barrier now leaks.** Under upwind, growth stopped at about
+  0.4 g in the cod-free state and R0 was exactly 0 up to `w_shift` = 0.2 g.
+  With diffusion that does not depend on food, as in `paper.Rmd`, cod
+  diffuse across the sizes at which they starve. Whether starving fish should
+  keep the growth variability of well-fed ones is debatable: this choice
+  weakens the Van Leeuwen et al. mechanism.
+* **The food barrier fails earlier**, at `w_shift` ≈ 0.39 g instead of
+  0.46 g.
+* **The cod state is much more stable.**
+  * At the baseline the leading real part is −0.095/yr instead of −0.060/yr.
+  * Under upwind the cod state cycled for `w_shift` ≥ 0.65 g without larval
+    predation. Here it is a stable fixed point up to 0.6 g.
+  * Under upwind a 30 % introduction failed at `w_shift` = 0.2 g, θ = 0. Here
+    it establishes.
 
 ## Caveats
 
-* **A fold near θ ≈ 0.04.** As larval predation strengthens, the Allee
-  threshold moves up to meet the cod state. At `w_shift` = 0.6 g a real
-  eigenvalue rises from −0.085/yr at θ = 0.038 to −0.0001/yr at θ = 0.040.
-  Beyond that, the cod state of the original model can no longer be held
-  fixed by recalibrating `erepro`, so the scan stops at θ = 0.035. At
-  `w_shift` = 0.2 g Newton's method already fails at θ = 0.035 (grey cell).
-* **Small basins.** Explicit larvae halve the damping of the cod state
-  (−0.06/yr against −0.13/yr in the original model). At `w_shift` = 0.2 g even
-  an introduction of 100 % overshoots, crashes and dies out, although the cod
-  state is locally stable. At strong larval predation (θ ≥ 0.035), projecting
-  from the copied-in starting state collapses cod even where Newton's method
-  finds a stable cod state. So stability is checked with Newton's method and
-  `getStability()`, not by projection.
-* **Cycles at late diet shifts.** Without larval predation, the cod state
-  cycles for `w_shift` ≥ 0.65 g. Larval predation of θ ≥ 0.01–0.015
-  stabilises it again. At `w_shift` = 0.2 g, by contrast, larval predation
-  weakens the stability (−0.017/yr at θ = 0.02).
+* **Larval predation is scanned only up to θ = 0.035.** In the upwind
+  version the cod state reached a fold near θ ≈ 0.04, where the Allee
+  threshold meets the cod state. That has not been checked under the new
+  numerics.
+* **Basins can be small.** At `w_shift` = 0.2 g, θ = 0, an introduction of
+  100 % overshoots, crashes and dies out, although 30 % establishes. Stability
+  is therefore checked with Newton's method and `getStability()`, not by
+  projection.
 * **What sprat eat.** Sprat use their planktivore kernel (β = 1000) on cod
   larvae, so they hit eggs and the smallest larvae hardest. Juvenile sprat,
   which are more numerous in the cod state, eat cod eggs too. This partly
   offsets the effect of the adults.
 * **Simplifications.** The larval food of cod is fixed, so the competition
   route is left out. The recalibrated `erepro` ties every point to the
-  original cod state. The numerics are those of the original model: upwind
-  scheme, 150 size classes, no physical size diffusion.
+  original cod state. The size diffusion does not depend on how well fish
+  feed. The R0 calculation calls mizer internals (as in `paper.Rmd`'s
+  repository) and was written against mizer 3.4.0.9001.
 
 ## Possible next steps
 
@@ -154,14 +205,16 @@ the 1 % seeds match R0 with a cod generation time of about 5 years.
   above θ_For,For ≈ 0.12.
 * Competition: let cod larvae eat the plankton spectrum instead of a fixed
   larval food.
-* The second-order scheme with physical size diffusion, as in `paper.Rmd`.
+* Size diffusion that scales with growth, so that starving fish do not
+  diffuse through the food bottleneck.
 
 ## Reproducing
 
 ```bash
-Rscript combined/run_prototype.R
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript combined/run_prototype.R
 ```
 
-It takes about 10 minutes on 8 cores and writes `results.rds` and the three
+It takes about an hour on 8 cores and writes `results.rds` and the three
 figures to this folder. It was computed with mizer 3.4.0.9001 and reads the
-two states of the original model from `model/`.
+two states of the original model from `model/`. Limiting BLAS to one thread
+per worker matters: otherwise the threads of the 8 workers compete.

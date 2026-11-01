@@ -32,6 +32,28 @@
 
 ## Combined model with cod larvae (`R/combined_model.R`)
 
+The combined model now uses the numerics of the cultivation-depensation
+repository: second-order scheme (centred flux, bin averages), 320 size classes
+and size diffusion with c = 0.1. Findings for that version:
+
+- The cod state is much more strongly damped than under upwind: max real part
+  −0.095/yr at the baseline (`w_shift` 0.2 g, θ 0) against −0.060/yr, and
+  −0.04 to −0.17/yr up to θ = 0.02 for `w_shift` 0.1–0.6 g. Under upwind it
+  cycled for `w_shift` ≥ 0.65 g.
+- Size diffusion carries cod across the food bottleneck: the food barrier
+  is never absolute (R0 in the cod-free state ≥ 0.27 at θ = 0, instead of 0),
+  and it fails at `w_shift` ≈ 0.39 g instead of 0.46 g.
+- Started from the anchor (θ = 0), Newton's method finds a **saddle** at
+  θ ≥ 0.025 for some `w_shift`: a real eigenvalue of about +0.1/yr and up to
+  30 % less cod (at 0.45 g, θ = 0.03: +0.109/yr). Starting from the solution at
+  the previous θ instead finds the stable cod state (−0.13/yr). Isolated
+  "unstable" points between stable neighbours are the giveaway. The driver
+  therefore continues along θ for each `w_shift`.
+- Cost of one point, single-threaded: Newton about 30 s, `getStability()`
+  about 36 s, scheme-consistent R0 under 1 s.
+
+Findings for the first, upwind version (150 classes, no physical diffusion):
+
 - Modelling cod eggs and larvae explicitly (1 mg instead of 0.5 g, larval
   food up to `w_shift` = 0.2 g) halves the damping of the cod state: max real
   part −0.06/yr against −0.13/yr in the original model. The basin shrinks with

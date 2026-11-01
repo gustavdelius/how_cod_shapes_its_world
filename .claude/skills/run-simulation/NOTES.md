@@ -16,3 +16,8 @@
 - `scanEffort()` with no gear sets every gear. The model has two gears, so use
   `scanEffort("Trawl")`, and give `effort` as a named vector or a time × gear
   array.
+- Combined model (second order, 320 classes, size diffusion): a 200-year
+  `project(method = "tr_bdf2", dt = 0.1)` takes about 20 s. One grid point
+  (two Newton solves, `getStability()`, four scheme-consistent R0 solves)
+  takes a few minutes. Run parallel workers with `OPENBLAS_NUM_THREADS=1
+  OMP_NUM_THREADS=1`, or the BLAS threads of 8 workers compete.

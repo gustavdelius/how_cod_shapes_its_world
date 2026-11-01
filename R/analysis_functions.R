@@ -36,30 +36,19 @@ stage_biomass <- function(object, species) {
 #' mizer's projection, so R0 is 1 at a steady state of `project()` up to a
 #' discretisation error. Density-dependent reproduction (R_max) is ignored,
 #' which is exact at low density.
-#'
-#' @param mortality_from A MizerParams whose state supplies the mortality
-#'   rate. By default the same as `params`. Taking growth and mortality from
-#'   different states separates the effect of food from that of predation.
-getR0 <- function(params, species = "Cod", mortality_from = params) {
+getR0 <- function(params, species = "Cod") {
     g <- getEGrowth(params)[species, ]
-    mu <- getMort(mortality_from)[species, ]
+    mu <- getMort(params)[species, ]
     e_repro <- getERepro(params)[species, ]
     dw <- dw(params)
     i0 <- params@w_min_idx[[species]]
-    N <- per_recruit_abundance(g, mu, dw, i0)
-    erepro <- species_params(params)[species, "erepro"]
-    0.5 * erepro * sum(e_repro * N * dw) / w(params)[i0]
-}
-
-#' Steady-state abundance density produced by a recruitment flux of 1 into
-#' size class `i0`, in the upwind discretisation of mizer's projection
-per_recruit_abundance <- function(g, mu, dw, i0) {
     N <- numeric(length(g))
     N[i0] <- 1 / (g[i0] + mu[i0] * dw[i0])
     for (j in (i0 + 1):length(g)) {
         N[j] <- g[j - 1] * N[j - 1] / (g[j] + mu[j] * dw[j])
     }
-    N
+    erepro <- species_params(params)[species, "erepro"]
+    0.5 * erepro * sum(e_repro * N * dw) / w(params)[i0]
 }
 
 #' Recruitment with a constant immigration term
