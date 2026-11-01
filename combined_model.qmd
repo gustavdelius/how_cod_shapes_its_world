@@ -186,7 +186,8 @@ model:
 * **$R_0$** comes from the steady state of the discretised transport
   equation itself (`cod_R0()`, ported from `R0_from_rates()` in the
   cultivation–depensation study). The upwind recursion of `getR0()` in this
-  repository is not valid with diffusion.
+  repository is exact only for the first-order upwind scheme without
+  diffusion; here it is about 3 % low, mostly because of the centred flux.
 
 ## Anchor states and `erepro`
 

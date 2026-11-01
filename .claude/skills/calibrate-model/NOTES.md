@@ -24,8 +24,18 @@
   rescale `erepro` by 1/R0 there, then polish with
   `findSteadyState(solver = "newton")`. Cod biomass stays within about 2 %.
   The cod-free state needs no recalculation: it does not depend on any cod
-  parameter. With size diffusion, R0 must come from the discretised
-  transport equation (`cod_R0()`), not from the upwind recursion of `getR0()`.
+  parameter.
+- In the combined model R0 must come from the discretised transport equation
+  (`cod_R0()`), not from the upwind recursion of `getR0()`, which is exact
+  only for the first-order upwind scheme without diffusion. Tested in the
+  original cod state carried over to the combined grid: with the centred flux
+  alone `getR0()` is 3.5 % low, with size diffusion as well 2.7 % low, so the
+  flux scheme causes most of the error, not diffusion. `cod_R0()` calls mizer
+  internals; an exported replacement is requested upstream as
+  https://github.com/sizespectrum/mizer/issues/632. Its
+  `max_iterations = 20000`, carried over from the cultivation-depensation
+  repository, is not needed with mizer 3.4.0.9001: in that state the default
+  cap gives identical abundances per recruit.
 - Carrying the original states over to the second-order grid
   (`combined_anchor()`): interpolate, then calibrate `erepro` and run Newton
   *twice*. The first Newton run from the interpolated cod state stalls

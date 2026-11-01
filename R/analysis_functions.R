@@ -35,7 +35,8 @@ stage_biomass <- function(object, species) {
 #' abundance per recruit uses the same first-order upwind discretisation as
 #' mizer's projection, so R0 is 1 at a steady state of `project()` up to a
 #' discretisation error. Density-dependent reproduction (R_max) is ignored,
-#' which is exact at low density.
+#' which is exact at low density. Not valid with the second-order flux or size
+#' diffusion: the combined model (R/combined_model.R) uses cod_R0() instead.
 getR0 <- function(params, species = "Cod") {
     g <- getEGrowth(params)[species, ]
     mu <- getMort(params)[species, ]

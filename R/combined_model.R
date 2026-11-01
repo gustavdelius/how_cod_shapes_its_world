@@ -27,7 +27,8 @@
 #   * size grids up to twice w_inf, and a senescence mortality
 #     z_sen (w / w_inf)^k_sen that stops diffusion carrying adults beyond w_inf;
 #   * R0 from the steady state of the discretised transport equation itself
-#     (cod_R0()), not from the upwind recursion of getR0().
+#     (cod_R0()), not from the upwind recursion of getR0(), which is exact
+#     only for the first-order upwind scheme without diffusion.
 #
 # The original model folded cod egg and larval survival into erepro. That
 # survival is now modelled, so cod erepro is recalibrated for every parameter
@@ -41,7 +42,8 @@
 #   theta    how readily sprat eat cod eggs and larvae.
 #
 # cod_R0() uses mizer internals, as the cultivation-depensation repository
-# does; it was written against mizer 3.4.0.9001.
+# does; it was written against mizer 3.4.0.9001. An exported replacement is
+# requested in https://github.com/sizespectrum/mizer/issues/632.
 #
 # Source after R/build_model.R.
 
