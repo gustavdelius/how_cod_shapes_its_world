@@ -469,6 +469,10 @@ ggplot(long, aes(F_cod, biomass, colour = species)) +
     labs(x = "Cod fishing mortality F_cod (1/yr)",
          y = "Equilibrium biomass relative to the\nunfished cod state (pseudo-log scale)",
          colour = NULL, linetype = NULL) +
+    # Species above branch type: without explicit orders the two legends
+    # swapped places between renders
+    guides(colour = guide_legend(order = 1),
+           linetype = guide_legend(order = 2)) +
     theme(legend.position = "bottom", legend.box = "vertical")
 ```
 
