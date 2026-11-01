@@ -1,15 +1,13 @@
 # Equilibrium branches of the combined model under cod fishing, with and
 # without a sprat fishery: the analogue of Figure 3 of paper.Rmd in the
-# cultivation-depensation repository (see combined/README.md).
+# cultivation-depensation repository (see combined_model.qmd).
 #
 # Run from the repository root:
 #   OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript combined/fishing_branches.R
-# It takes about 15 minutes on 4 cores and writes combined/fishing_branches.rds
-# and combined/fishing_bifurcation.png. With the argument --figures it only
-# redraws the figure from combined/fishing_branches.rds.
+# It takes about 15 minutes on 4 cores and writes
+# combined/fishing_branches.rds, which combined_model.qmd reads.
 
 library(mizer)
-library(ggplot2)
 library(parallel)
 options(mizer_info_level = 0)
 source("R/build_model.R")
@@ -118,71 +116,16 @@ compute_branches <- function() {
     res
 }
 
-res <- if ("--figures" %in% commandArgs(trailingOnly = TRUE)) {
-    readRDS("combined/fishing_branches.rds")
-} else {
-    compute_branches()
-}
+res <- compute_branches()
 branches <- res$branches
 invasion <- res$invasion
 
-# Figure --------------------------------------------------------------------
+# Summary --------------------------------------------------------------------
 
 sweeps <- c("Increasing F_cod (from the cod state)",
             "Decreasing F_cod (from the cod-free state + seed)")
-branches$sweep <- factor(branches$sweep, levels = sweeps)
-# Near the invasion boundary a cod seed grows so slowly that it has not
-# settled after 3000 years. Those steps are not equilibria and are left out.
-settled <- branches[branches$converged, ]
-# Draw only the branches of steady states, not the jumps between them: each
-# sweep is split where cod move between the abundant state and depleted ones
+# Cod above this fraction of their unfished biomass count as abundant
 abundant <- 0.1
-sweep_id <- paste(settled$F_sprat, settled$sweep)
-settled$segment <- ave(as.numeric(settled$Cod > abundant), sweep_id,
-                       FUN = function(a) cumsum(c(0, diff(a) != 0)))
-long <- rbind(
-    transform(settled, species = "Sprat", biomass = Sprat),
-    transform(settled, species = "Cod", biomass = Cod))
-long$species <- factor(long$species, levels = c("Sprat", "Cod"))
-long$panel <- sprintf("Sprat fishing F = %.2f", long$F_sprat)
-# A vertical arrow at the end of each branch to the state the system jumps to
-jumps <- do.call(rbind, lapply(
-    split(long, paste(long$species, long$panel, long$sweep)),
-    function(d) {
-        k <- which(diff(d$segment) != 0)
-        data.frame(d[k, c("F_cod", "F_sprat", "sweep", "panel", "species")],
-                   y = d$biomass[k], yend = d$biomass[k + 1])
-    }))
-# Where a cod seed invades, the jump happens at the invasion boundary
-inv <- invasion$F_inv[match(jumps$F_sprat, invasion$F_sprat)]
-at_inv <- jumps$sweep == sweeps[2] & !is.na(inv)
-jumps$F_cod[at_inv] <- inv[at_inv]
-
-p <- ggplot(long, aes(F_cod, biomass, colour = species)) +
-    geom_line(aes(linetype = sweep,
-                  group = interaction(species, sweep, segment)),
-              linewidth = 0.9) +
-    geom_segment(data = jumps,
-                 aes(x = F_cod, xend = F_cod, y = y, yend = yend),
-                 linewidth = 0.4, show.legend = FALSE,
-                 arrow = arrow(length = unit(2, "mm"), type = "closed")) +
-    facet_wrap(~panel) +
-    scale_y_continuous(trans = scales::pseudo_log_trans(sigma = 1e-3),
-                       breaks = c(0, 1e-3, 1e-2, 0.1, 1),
-                       labels = c("0", "0.001", "0.01", "0.1", "1")) +
-    scale_colour_manual(values = c(Sprat = "#2a78d6", Cod = "#eb6834")) +
-    labs(x = "Cod fishing mortality F_cod (1/yr)",
-         y = "Equilibrium biomass relative to the\nunfished cod state (pseudo-log scale)",
-         colour = NULL, linetype = NULL) +
-    theme_minimal(base_size = 12) +
-    theme(panel.grid.minor = element_blank(),
-          legend.position = "bottom", legend.box = "vertical",
-          strip.text = element_text(face = "bold", hjust = 0))
-ggsave("combined/fishing_bifurcation.png", p, width = 9, height = 5.5,
-       dpi = 110, bg = "white")
-
-# Summary --------------------------------------------------------------------
-
 print(invasion)
 for (F_sprat in F_sprat_values) {
     up <- branches[branches$F_sprat == F_sprat & branches$sweep == sweeps[1], ]

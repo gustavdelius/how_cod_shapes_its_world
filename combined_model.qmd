@@ -1,0 +1,603 @@
+---
+title: "Two Allee mechanisms in one model"
+subtitle: "A mizer prototype that combines the emergent Allee effect of Van Leeuwen, De Roos & Persson (2008) with cultivation–depensation"
+date: today
+# Rendered to docs/combined_model.html (see _quarto.yml) for GitHub Pages
+output-file: combined_model.html
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    code-fold: true
+    code-summary: "Code"
+    embed-resources: true
+    fig-width: 8
+    fig-height: 4.5
+    fig-dpi: 110
+bibliography: references.bib
+execute:
+  # The document only reads the results of the scripts in combined/, which
+  # knitr's cache would not notice changing
+  cache: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+library(mizer)
+library(ggplot2)
+options(mizer_info_level = 0)
+source("R/build_model.R")
+source("R/combined_model.R")
+
+# Results of combined/run_prototype.R and combined/fishing_branches.R
+res <- readRDS("combined/results.rds")
+scan <- res$scan
+intro <- res$intro
+fishing <- readRDS("combined/fishing_branches.rds")
+
+col_species <- c(Sprat = "#2a78d6", Cod = "#eb6834")
+theme_set(theme_minimal(base_size = 12) +
+              theme(panel.grid.minor = element_blank(),
+                    legend.position = "top",
+                    strip.text = element_text(face = "bold", hjust = 0)))
+fmt <- function(x, digits = 2) format(signif(x, digits), big.mark = ",",
+                                      scientific = FALSE, trim = TRUE)
+#' "min–max" of x with a fixed number of decimals
+range_text <- function(x, decimals = 2) {
+    paste(sprintf(paste0("%.", decimals, "f"), range(x)), collapse = "–")
+}
+#' A number with a fixed number of decimals and a proper minus sign
+num <- function(x, decimals = 3) {
+    sub("^-", "−", sprintf(paste0("%.", decimals, "f"), x))
+}
+#' The scan result at one grid point
+at <- function(w_shift, theta) {
+    scan[abs(scan$w_shift - w_shift) < 1e-9 & abs(scan$theta - theta) < 1e-9, ]
+}
+```
+
+```{r}
+#| label: numbers
+# Size grid of the combined model
+p0 <- new_combined_params()
+dlnw <- log(w(p0)[2] / w(p0)[1])
+# h as mizer would re-derive it for cod eggs of 1 mg
+sp_default <- cod_sprat_species
+sp_default$w_min <- c(0.001, 0.001)
+h_default <- species_params(newMultispeciesParams(
+    sp_default, interaction = cod_sprat_interaction,
+    info_level = 0))["Cod", "h"]
+h_original <- species_params(new_cod_sprat_params())["Cod", "h"]
+
+# Without larval predation the barrier is the food barrier alone
+base <- scan[scan$theta == 0, ]
+w_food <- approx(base$food, base$w_shift, xout = 1)$y
+# Where food alone lets cod invade, the larval predation that restores the
+# barrier
+theta_inv <- sapply(base$w_shift[base$R0 > 1], function(ws) {
+    d <- scan[abs(scan$w_shift - ws) < 1e-9, ]
+    approx(d$R0, d$theta, xout = 1)$y
+})
+anchor_biomass <- at(0.2, 0)$cod_biomass
+low_theta <- scan[scan$theta <= 0.02 + 1e-9, ]
+unstable <- scan[scan$converged & scan$max_real_part > 0, ]
+
+# Fishing: where the cod state collapses along increasing cod fishing
+fb <- fishing$branches
+finv <- fishing$invasion
+sweeps <- c("Increasing F_cod (from the cod state)",
+            "Decreasing F_cod (from the cod-free state + seed)")
+abundant <- 0.1
+collapse <- do.call(rbind, lapply(finv$F_sprat, function(Fs) {
+    up <- fb[fb$F_sprat == Fs & fb$sweep == sweeps[1], ]
+    last <- max(up$F_cod[up$Cod > abundant])
+    data.frame(F_sprat = Fs, last = last, cod = up$Cod[up$F_cod == last],
+               collapse = min(up$F_cod[up$F_cod > last]))
+}))
+cl0 <- collapse[collapse$F_sprat == 0, ]
+cl5 <- collapse[collapse$F_sprat > 0, ]
+inv5 <- finv[finv$F_sprat > 0, ]
+```
+
+# Summary
+
+Two mechanisms have been proposed for why a collapsed cod stock may not
+recover, and each has its own mizer model:
+
+* **The emergent Allee effect** of @vanleeuwen2008, reproduced in [How cod
+  shapes its world](index.html). Without cod, sprat become a stunted
+  population that produces few young. Juvenile cod then find too few small
+  sprat to grow on.
+* **Cultivation–depensation** [@walters2001cultivation], studied in the
+  [cultivation–depensation
+  study](https://github.com/gustavdelius/cultivation-depensation) ([PDF](https://github.com/gustavdelius/cultivation-depensation/blob/main/paper.pdf)).
+  Without cod, abundant adult forage fish eat cod eggs and larvae.
+
+This prototype puts both into one model. It is the cod–sprat model of [How
+cod shapes its world](index.html) with cod eggs and larvae added, and with
+sprat eating them. Two parameters move the model continuously from one
+mechanism to the other:
+
+* the size **`w_shift`** at which cod larvae run out of their own food and
+  come to depend on sprat;
+* the strength **θ** with which sprat eat cod eggs and larvae.
+
+The main results:
+
+* **The model runs from one mechanism to the other.** With early diet shifts
+  and no larval predation, only the food barrier keeps cod out of the
+  cod-free state. With late diet shifts, food works *against* the Allee effect
+  and only larval predation keeps cod out. In between, both act.
+* **Where both act, they reinforce each other.** Hungry juvenile cod grow
+  slowly, so they spend longer at the sizes where sprat eat them.
+* **Simulated cod introductions agree with the invasion analysis.**
+* **Fishing.** Under cod fishing the cod state collapses at a fold, and cod
+  do not return when fishing stops. A sprat fishery opens the way back.
+
+The numerics follow the cultivation–depensation study rather than [How cod
+shapes its world](index.html): a second-order scheme with size diffusion.
+
+# The model {#model}
+
+## Changes to the cod–sprat model
+
+`R/combined_model.R` makes three changes to the cod–sprat model of
+`R/build_model.R`:
+
+* **Cod start as 1 mg eggs** instead of 0.5 g settled juveniles. Their
+  energetics (`h`, `ks`) are those of the original model. Mizer would
+  otherwise re-derive `h` from the new `w_min` and raise it by
+  `r fmt(100 * (h_default / h_original - 1), 2)` %.
+* **Cod larvae feed on an unmodelled larval food** that runs out around the
+  diet-shift size `w_shift`. This is a fixed external encounter rate that
+  gives a feeding level of 0.6 on its own, multiplied by
+  $1/(1 + (w/w_\text{shift})^6)$. Above `w_shift`, cod depend on sprat as
+  before. The larval food is not depleted, so cod larvae do not compete with
+  sprat. That keeps out the third route of the cultivation–depensation
+  study, competition.
+* **Sprat eat cod eggs and larvae** with interaction strength θ
+  (`interaction_matrix["Sprat", "Cod"]`). Sprat still do not eat their own
+  larvae, and cod do not eat cod. Those are the asymmetries that
+  cultivation–depensation needs.
+
+## Numerics
+
+The numerics follow the cultivation–depensation study, not the original
+model:
+
+* **Second-order scheme.** `r length(w(p0))` size classes
+  ($\Delta \ln w = `r fmt(dlnw, 2)`$), a centred flux and bin-averaged
+  rates. The larval food and the senescence mortality are bin-averaged by
+  hand.
+* **Size diffusion** $D(w) = D_\text{ext} w^{n+1}$, with
+  $D_\text{ext} = c\,(\alpha f_0 h - k_s)$ and $c = 0.1$. A juvenile cohort
+  feeding at $f_0 = 0.6$ then gains 0.1 in the variance of $\ln w$ per unit
+  of $\ln w$ it grows. Since $c > \Delta \ln w$, the centred flux stays
+  monotone.
+* **Senescence.** Species grids reach $2 w_\infty$, and a senescence
+  mortality $0.5\,(w/w_\infty)^{10}$ stops diffusion carrying adults beyond
+  $w_\infty$.
+* **Time stepping.** Projections use TR-BDF2 with $\Delta t = 0.1$ yr.
+  Steady states come from mizer's Newton solver and stability from
+  `getStability()`.
+* **$R_0$** comes from the steady state of the discretised transport
+  equation itself (`cod_R0()`, ported from `R0_from_rates()` in the
+  cultivation–depensation study). The upwind recursion of `getR0()` in this
+  repository is not valid with diffusion.
+
+## Anchor states and `erepro`
+
+The two states of the original model (upwind scheme, cod from 0.5 g) are
+interpolated onto the new grid, with cod eggs and larvae filled in. They are
+then solved again under the new numerics at the baseline: `w_shift` = 0.2 g
+and no larval predation (`combined_anchor()`).
+
+The original model folded cod egg and larval survival into `erepro`. That
+survival is now modelled, so cod `erepro` is recalibrated for every
+(`w_shift`, θ): it is rescaled until the anchor cod state is a steady state,
+and Newton's method then polishes it. This works because with `R_max = Inf`
+every steady state has $R_0 = 1$, so `erepro` selects the state.
+
+* Across the scan, cod biomass stays within
+  `r fmt(100 * max(abs(scan$cod_biomass[scan$converged] / anchor_biomass - 1)), 1)` %
+  of the anchor.
+* `erepro` ranges from `r fmt(min(scan$erepro), 1)` to
+  `r fmt(max(scan$erepro), 2)`.
+* The cod-free state does not depend on any cod parameter, so it is the same
+  throughout.
+
+This mirrors the cultivation–depensation study, which held its coexistence
+state fixed while varying parameters.
+
+Started directly from the anchor, Newton's method finds a saddle at
+θ ≥ 0.025 for some values of `w_shift`, with a positive real eigenvalue and
+up to 30 % less cod. The scan therefore follows the cod state along
+increasing θ, starting each point from the solution at the previous θ.
+
+# Telling the mechanisms apart
+
+Bistability needs a stable cod state and a cod-free state that cod cannot
+invade. The cod-free state is uninvadable when the invasion fitness $R_0$ of a
+rare cod there is below 1. As in the cultivation–depensation study, $R_0$ is
+decomposed by taking growth and reproduction from one state and mortality
+from the other. The cod state has $R_0 = 1$.
+
+* **Food**: cod-free growth with cod-state mortality. This is the mechanism
+  of @vanleeuwen2008, and it is below 1 when juvenile cod starve.
+* **Larval predation**: cod-state growth with cod-free mortality. This is
+  cultivation–depensation, and it is below 1 when sprat eat more cod larvae.
+* **Interaction** = $R_0$ / (food × larval predation). It lies between
+  `r num(min(scan$interaction, na.rm = TRUE), 2)` and 1 here. It is
+  below 1 because hungry juvenile cod grow slowly, so they spend longer in
+  the size range where sprat eat them. The two mechanisms amplify each other.
+
+# Results
+
+## The regime map
+
+```{r}
+#| label: fig-regime
+#| fig-height: 5.5
+#| fig-cap: "$R_0$ of a rare cod in the cod-free state over the diet-shift size and the strength of larval predation. The solid line is $R_0 = 1$: below and to the right of it cod invade, and elsewhere the system is bistable. The dashed line is where the food factor alone equals 1. × marks an unstable cod state."
+# R0 is 0 where the food barrier is absolute; cap the log scale there
+map <- scan
+map$log_R0 <- pmin(pmax(log10(map$R0), -2), 0.5)
+map$log_food <- pmin(pmax(log10(map$food), -2), 0.5)
+ggplot(map, aes(w_shift, theta)) +
+    geom_raster(aes(fill = log_R0)) +
+    geom_contour(aes(z = log_R0), breaks = 0, colour = "black",
+                 linewidth = 0.9) +
+    geom_contour(aes(z = log_food), breaks = 0, colour = "black",
+                 linewidth = 0.6, linetype = "dashed") +
+    geom_point(data = unstable, shape = 4, size = 2) +
+    annotate("label", x = 0.2, y = 0.003, size = 3.3,
+             label = "Food barrier\n(Van Leeuwen et al.)") +
+    annotate("label", x = 0.26, y = 0.024, size = 3.3,
+             label = "Both barriers") +
+    annotate("label", x = 0.5, y = 0.027, size = 3.3,
+             label = "Larval-predation barrier\n(cultivation–depensation)") +
+    annotate("label", x = 0.53, y = 0.0025, size = 3.3,
+             label = "Cod invade:\nno bistability") +
+    scale_fill_gradient2(low = "#2a78d6", mid = "white", high = "#eb6834",
+                         midpoint = 0, limits = c(-2, 0.5),
+                         na.value = "grey80", breaks = c(-2, -1, 0, 0.5),
+                         labels = c("≤ 0.01", "0.1", "1", "3"),
+                         name = expression(R[0] ~ "of cod in the cod-free state")) +
+    scale_x_continuous(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0)) +
+    labs(x = "Size at which cod larval food runs out, w_shift (g)",
+         y = "Sprat predation on cod larvae, θ") +
+    theme(legend.key.width = unit(1.5, "cm"))
+```
+
+@fig-regime shows three regions:
+
+* **Food barrier alone** (θ = 0, `w_shift` < `r fmt(w_food, 2)` g).
+  * The barrier is not absolute: size diffusion carries some cod through the
+    sizes at which they starve, so $R_0 = `r fmt(at(0.1, 0)$R0, 2)`$ at
+    `w_shift` = 0.1 g and `r fmt(at(0.2, 0)$R0, 2)` at 0.2 g.
+  * A later diet shift weakens it further ($R_0$ =
+    `r fmt(at(0.3, 0)$R0, 2)` at 0.3 g), and it fails at about
+    `r fmt(w_food, 2)` g.
+* **Larval-predation barrier alone** (right of the dashed line, above the
+  solid one).
+  * Here food works *against* depensation: a rare cod in the cod-free state
+    grows *better* than in the cod state (food factor
+    `r range_text(base$food[base$food > 1])`). This is the situation in
+    the cultivation–depensation study.
+  * Larval predation alone keeps $R_0$ below 1, from θ ≈
+    `r range_text(theta_inv, 3)`.
+* **Both barriers** (left of the dashed line, θ > 0). Both factors are below
+  1 and multiply.
+
+The cod state is stable at every point with θ ≤ 0.02 (leading real part
+`r num(min(low_theta$max_real_part))` to
+`r num(max(low_theta$max_real_part))`/yr). At `w_shift` =
+`r unique(unstable$w_shift)` g it loses stability gradually from
+θ ≈ `r min(unstable$theta)`, with a leading real part of
+`r sprintf("+%.3f to +%.3f", min(unstable$max_real_part), max(unstable$max_real_part))`/yr.
+
+```{r}
+#| label: tbl-points
+#| tbl-cap: "The decomposition of $R_0$ at five points. The cod state has $R_0 = 1$; its leading eigenvalue (max Re) is negative where it is stable."
+pts <- rbind(at(0.2, 0), at(0.3, 0.01), at(0.5, 0), at(0.5, 0.01),
+             at(0.5, 0.02))
+knitr::kable(data.frame(
+    `w_shift (g)` = pts$w_shift,
+    θ = pts$theta,
+    Food = sprintf("%.2f", pts$food),
+    `Larval predation` = sprintf("%.2f", pts$larval_predation),
+    Interaction = sprintf("%.2f", pts$interaction),
+    R0 = sprintf("**%.2f**", pts$R0),
+    `Cod state, max Re (1/yr)` = num(pts$max_real_part),
+    check.names = FALSE), align = "rrrrrrr")
+```
+
+## Decomposition
+
+```{r}
+#| label: fig-decomposition
+#| fig-height: 4
+#| fig-cap: "The two factors of $R_0$, and $R_0$ itself, along two values of θ. Where the food factor crosses 1, the barrier passes from shared to purely larval predation."
+dec <- scan[scan$theta %in% c(0.01, 0.02) & scan$converged, ]
+dec_long <- rbind(
+    data.frame(dec[c("w_shift", "theta")], factor = "Food (growth only)",
+               value = dec$food),
+    data.frame(dec[c("w_shift", "theta")],
+               factor = "Larval predation (mortality only)",
+               value = dec$larval_predation),
+    data.frame(dec[c("w_shift", "theta")], factor = "Both (R0)",
+               value = dec$R0))
+dec_long$factor <- factor(dec_long$factor, levels = unique(dec_long$factor))
+dec_long$theta <- paste("θ =", dec_long$theta)
+ggplot(dec_long[dec_long$value > 0, ], aes(w_shift, value, colour = factor)) +
+    geom_hline(yintercept = 1, colour = "grey45", linetype = "dashed") +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 1.4) +
+    facet_wrap(~theta) +
+    scale_y_log10() +
+    scale_colour_manual(values = c("#eb6834", "#2a78d6", "grey20"),
+                        name = NULL) +
+    labs(x = "Size at which cod larval food runs out, w_shift (g)",
+         y = "R0 of a rare cod in the cod-free state")
+```
+
+The food factor rises steeply with `w_shift` (@fig-decomposition). The
+larval-predation factor is
+`r range_text(scan$larval_predation[abs(scan$theta - 0.01) < 1e-9])` at
+θ = 0.01 and
+`r range_text(scan$larval_predation[abs(scan$theta - 0.02) < 1e-9])` at
+θ = 0.02. It is lowest at early diet shifts: there, even in the cod state,
+juvenile cod grow slowly on sprat and spend longer within reach of sprat.
+
+## Introductions
+
+```{r}
+#| label: fig-introductions
+#| fig-height: 5.5
+#| fig-cap: "Cod biomass after cod are introduced into the cod-free state at a fraction of the cod state's size distribution, projected with TR-BDF2."
+intro_points <- unique(intro[c("w_shift", "theta")])
+point_label <- function(w_shift, theta) {
+    sprintf("w_shift = %.2f g, θ = %.2f", w_shift, theta)
+}
+intro$point <- factor(point_label(intro$w_shift, intro$theta),
+                      levels = point_label(intro_points$w_shift,
+                                           intro_points$theta))
+intro_factors <- sort(unique(intro$factor))
+intro$introduced <- factor(paste0(100 * intro$factor, " %"),
+                           levels = paste0(100 * intro_factors, " %"))
+ggplot(intro, aes(time, cod, colour = introduced)) +
+    geom_hline(yintercept = 1, colour = "grey45", linetype = "dashed") +
+    geom_line(linewidth = 0.9) +
+    facet_wrap(~point, ncol = 3) +
+    scale_y_log10() +
+    coord_cartesian(ylim = c(1e-6, 3)) +
+    scale_colour_manual(values = c("#86b6ef", "#2a78d6", "#0d366b"),
+                        name = "Cod introduced (fraction of cod state)") +
+    labs(x = "Years after introduction",
+         y = "Cod biomass / cod-state biomass")
+```
+
+```{r}
+#| label: tbl-introductions
+#| tbl-cap: "Outcome of the introductions in @fig-introductions after 300 years."
+intro_end <- intro[intro$time == max(intro$time), ]
+intro_end$outcome <- ifelse(intro_end$cod > 0.5, "establishes", "dies out")
+intro_end$outcome[intro_end$outcome == "establishes" &
+                      intro_end$factor == min(intro_factors)] <- "invades"
+outcomes <- sapply(intro_factors, function(f) {
+    d <- intro_end[intro_end$factor == f, ]
+    d$outcome[match(point_label(intro_points$w_shift, intro_points$theta),
+                    point_label(d$w_shift, d$theta))]
+})
+colnames(outcomes) <- paste0(100 * intro_factors, " %")
+knitr::kable(data.frame(
+    `w_shift, θ` = sprintf("%.1f g, %.2f", intro_points$w_shift,
+                           intro_points$theta),
+    outcomes, check.names = FALSE), row.names = FALSE)
+```
+
+The simulations agree with the invasion analysis
+(@fig-introductions, @tbl-introductions). At `w_shift` = 0.5 g, larval
+predation creates the bistability that food alone no longer provides, and the
+Allee threshold rises with θ. Introductions far above the cod state can
+overshoot: at 0.2 g without larval predation, an introduction of 100 % eats
+down the sprat, crashes and dies out, although 30 % establishes.
+
+## Fishing
+
+This is the analogue of Figure 3 of the cultivation–depensation study, at the
+point `w_shift` = `r fishing$w_shift` g, θ = `r fishing$theta`, where both
+barriers act. Each step projects the model until every biomass changes by
+less than $10^{-5}$/yr, starting from the state of the previous step.
+
+* **Two sweeps.** Solid lines increase cod fishing from the cod state.
+  Dashed lines decrease it from the cod-free state, with cod topped up to
+  $10^{-6}$ of their unfished abundance before each step.
+* **Fishing gear.** Cod fishing is the length-selective trawl of the
+  original model, so $F_\text{cod}$ is the fishing mortality on fully
+  selected cod. The sprat fishery takes sprat above 1 g.
+
+```{r}
+#| label: fig-fishing
+#| fig-height: 5.5
+#| fig-cap: "Equilibrium biomass under increasing (solid, from the cod state) and decreasing (dashed, from the cod-free state with a cod seed) cod fishing, without a sprat fishery (left) and with one (right). Biomasses are relative to the unfished cod state. Arrows mark where a branch ends and the system jumps."
+branches <- fb
+branches$sweep <- factor(branches$sweep, levels = sweeps)
+# Near the invasion boundary a cod seed grows so slowly that it has not
+# settled after 3000 years. Those steps are not equilibria and are left out.
+settled <- branches[branches$converged, ]
+# Draw only the branches of steady states, not the jumps between them: each
+# sweep is split where cod move between the abundant state and depleted ones
+sweep_id <- paste(settled$F_sprat, settled$sweep)
+settled$segment <- ave(as.numeric(settled$Cod > abundant), sweep_id,
+                       FUN = function(a) cumsum(c(0, diff(a) != 0)))
+long <- rbind(
+    transform(settled, species = "Sprat", biomass = Sprat),
+    transform(settled, species = "Cod", biomass = Cod))
+long$species <- factor(long$species, levels = c("Sprat", "Cod"))
+long$panel <- sprintf("Sprat fishing F = %.2f", long$F_sprat)
+# A vertical arrow at the end of each branch to the state the system jumps to
+jumps <- do.call(rbind, lapply(
+    split(long, paste(long$species, long$panel, long$sweep)),
+    function(d) {
+        k <- which(diff(d$segment) != 0)
+        data.frame(d[k, c("F_cod", "F_sprat", "sweep", "panel", "species")],
+                   y = d$biomass[k], yend = d$biomass[k + 1])
+    }))
+# Where a cod seed invades, the jump happens at the invasion boundary
+inv <- finv$F_inv[match(jumps$F_sprat, finv$F_sprat)]
+at_inv <- jumps$sweep == sweeps[2] & !is.na(inv)
+jumps$F_cod[at_inv] <- inv[at_inv]
+ggplot(long, aes(F_cod, biomass, colour = species)) +
+    geom_line(aes(linetype = sweep,
+                  group = interaction(species, sweep, segment)),
+              linewidth = 0.9) +
+    geom_segment(data = jumps,
+                 aes(x = F_cod, xend = F_cod, y = y, yend = yend),
+                 linewidth = 0.4, show.legend = FALSE,
+                 arrow = arrow(length = unit(2, "mm"), type = "closed")) +
+    facet_wrap(~panel) +
+    scale_y_continuous(trans = scales::pseudo_log_trans(sigma = 1e-3),
+                       breaks = c(0, 1e-3, 1e-2, 0.1, 1),
+                       labels = c("0", "0.001", "0.01", "0.1", "1")) +
+    scale_colour_manual(values = col_species) +
+    labs(x = "Cod fishing mortality F_cod (1/yr)",
+         y = "Equilibrium biomass relative to the\nunfished cod state (pseudo-log scale)",
+         colour = NULL, linetype = NULL) +
+    theme(legend.position = "bottom", legend.box = "vertical")
+```
+
+The two panels of @fig-fishing:
+
+* **Without sprat fishing**, the cod state persists up to
+  $F_\text{cod}$ = `r cl0$last`, with cod at
+  `r fmt(100 * cl0$cod, 2)` % of their unfished biomass, and collapses at
+  `r cl0$collapse`. The cod-free state cannot be invaded at any
+  $F_\text{cod}$ ($R_0$ = `r fmt(finv$R0_unfished_cod[finv$F_sprat == 0], 2)`
+  at $F_\text{cod}$ = 0). Reducing fishing after the collapse does not bring
+  cod back.
+* **With sprat fishing at F = `r inv5$F_sprat`**, the cod state collapses at
+  `r cl5$collapse`, where cod are already down to
+  `r fmt(100 * cl5$cod, 2)` % of their unfished biomass. The sprat fishery
+  makes the cod-free state invadable ($R_0$ = `r fmt(inv5$R0_unfished_cod, 3)`
+  at $F_\text{cod}$ = 0). Below $F_\text{inv}$ = `r fmt(inv5$F_inv, 2)`, a
+  cod seed invades and returns to the abundant state. The hysteresis loop
+  narrows to `r fmt(inv5$F_inv, 2)`–`r cl5$last`.
+
+Two differences from Figure 3 of the cultivation–depensation study:
+
+* **Sprat fishing barely moves the collapse threshold**
+  (`r cl0$collapse` to `r cl5$collapse`). In the cultivation–depensation
+  study, forage-fish harvest moves it from 0.16 to 0.25. Here it mainly opens
+  the way back.
+* **There is no low-abundance cod state.** In the cultivation–depensation
+  study, a predator invading under forage harvest first settles at low
+  abundance, and full recovery needs more forage harvest. Here the invader
+  goes straight back to the abundant state. The likely reason is the food
+  mechanism: once established, cod thin the sprat, which raises sprat
+  recruitment and feeds juvenile cod. The predator of the
+  cultivation–depensation study lacks this feedback, because there food works
+  against depensation.
+
+Two steps of the downward sweep with sprat fishing,
+$F_\text{cod}$ = `r paste(sort(fb$F_cod[!fb$converged]), collapse = " and ")`,
+are left out. There $R_0$ is within a few per cent of 1, and the seed had not
+settled after 3000 years. The return arrow is drawn at $F_\text{inv}$, where
+$R_0 = 1$.
+
+The settling uses mizer's Euler method with $\Delta t = 0.1$. The
+cultivation–depensation study settles with $\Delta t = 0.5$, but in this
+model that step is unstable: Euler's one-step map has a spectral radius of
+1.08 in the cod-free state. TR-BDF2 with $\Delta t = 0.5$ drifts away from a
+stable cod state after about 150 years.
+
+# Effect of the numerics
+
+The first version of this prototype
+([commit 161199e](https://github.com/gustavdelius/how_cod_shapes_its_world/commit/161199e))
+used the numerics of the original model: upwind scheme, 150 size classes and
+no physical diffusion. The qualitative result is the same, but three things
+changed:
+
+* **The food barrier now leaks.** Under upwind, growth stopped at about
+  0.4 g in the cod-free state, and $R_0$ was exactly 0 up to `w_shift` =
+  0.2 g. With diffusion that does not depend on food, as in the
+  cultivation–depensation study, cod diffuse across the sizes at which they
+  starve. Whether starving fish should keep the growth variability of
+  well-fed ones is debatable: this choice weakens the mechanism
+  of @vanleeuwen2008.
+* **The food barrier fails earlier**, at `w_shift` ≈ `r fmt(w_food, 2)` g
+  instead of 0.46 g.
+* **The cod state is much more stable.**
+  * At the baseline the leading real part is
+    `r num(at(0.2, 0)$max_real_part)`/yr instead of −0.060/yr.
+  * Under upwind, the cod state cycled for `w_shift` ≥ 0.65 g without larval
+    predation. Here it is a stable fixed point up to
+    `r max(scan$w_shift)` g.
+  * Under upwind, an introduction of 30 % failed at `w_shift` = 0.2 g,
+    θ = 0. Here it establishes.
+
+# Caveats
+
+* **Larval predation is scanned only up to θ = `r max(scan$theta)`.** In the
+  upwind version the cod state reached a fold near θ ≈ 0.04, where the Allee
+  threshold meets the cod state. That has not been checked under the new
+  numerics.
+* **Basins can be small.** Introductions far above the cod state can
+  overshoot and die out (@tbl-introductions). Stability is therefore checked
+  with Newton's method and `getStability()`, not by projection.
+* **What sprat eat.** Sprat use their planktivore kernel (β = 1000) on cod
+  larvae, so they hit eggs and the smallest larvae hardest. Juvenile sprat,
+  which are more numerous in the cod state, eat cod eggs too. This partly
+  offsets the effect of the adults.
+* **Simplifications.**
+  * The larval food of cod is fixed, so the competition route is left out.
+  * The recalibrated `erepro` ties every point to the original cod state.
+  * The size diffusion does not depend on how well fish feed.
+  * The $R_0$ calculation calls mizer internals, as in the
+    cultivation–depensation study, and was written against mizer
+    `r res$mizer_version`.
+
+# Possible next steps
+
+* The fishing thresholds across (`w_shift`, θ): does the collapse threshold
+  or the width of the hysteresis loop depend on which barrier holds cod back?
+  @fig-fishing covers one point only.
+* Sensitivity to sprat cannibalism, which removes the barrier in the
+  cultivation–depensation study above $\theta_\text{For,For} \approx 0.12$.
+* Competition: let cod larvae eat the plankton spectrum instead of a fixed
+  larval food.
+* Size diffusion that scales with growth, so that starving fish do not
+  diffuse through the food bottleneck.
+
+# Reproducing this document
+
+| File | Contents |
+|:--|:--|
+| `R/combined_model.R` | The combined model, the anchor states, $R_0$ and its decomposition |
+| `combined/run_prototype.R` | The scan over (`w_shift`, θ) and the introductions; writes `combined/results.rds` |
+| `combined/fishing_branches.R` | The branches under cod fishing; writes `combined/fishing_branches.rds` |
+| `combined_model.qmd` | This document; it reads the two results files |
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript combined/run_prototype.R
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript combined/fishing_branches.R
+quarto render combined_model.qmd
+```
+
+The scan takes about an hour on 8 cores and the fishing branches about 15
+minutes on 4 cores. Limiting BLAS to one thread per worker matters: otherwise
+the threads of the parallel workers compete. The document itself renders in
+seconds and writes `docs/combined_model.html`.
+
+The results were computed with mizer `r res$mizer_version`. This document was
+rendered with mizer `r packageVersion("mizer")` and `r R.version.string`.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

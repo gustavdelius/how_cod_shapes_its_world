@@ -1,15 +1,14 @@
 # Prototype: the emergent Allee effect and cultivation-depensation in one
-# mizer model (see R/combined_model.R and combined/README.md).
+# mizer model (see R/combined_model.R and combined_model.qmd).
 #
-# Run from the repository root:
-#   Rscript combined/run_prototype.R
-# It takes about an hour on 8 cores and writes combined/results.rds and the
-# figures in combined/. Limit BLAS to one thread per worker, for example with
+# Scans the plane of diet-shift size and larval predation, and simulates cod
+# introductions. Run from the repository root, with BLAS limited to one thread
+# per worker:
 #   OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript combined/run_prototype.R
+# It takes about an hour on 8 cores and writes combined/results.rds, which
+# combined_model.qmd reads.
 
 library(mizer)
-library(ggplot2)
-library(patchwork)
 library(parallel)
 options(mizer_info_level = 0)
 source("R/build_model.R")
@@ -86,91 +85,6 @@ intro <- do.call(rbind, mclapply(seq_len(nrow(intro_runs)), function(i) {
 saveRDS(list(scan = scan, intro = intro,
              mizer_version = as.character(packageVersion("mizer"))),
         "combined/results.rds")
-
-# Figures ------------------------------------------------------------------
-
-theme_set(theme_minimal(base_size = 12) +
-              theme(panel.grid.minor = element_blank(),
-                    legend.position = "top",
-                    strip.text = element_text(face = "bold", hjust = 0)))
-
-# R0 is 0 where the food barrier is absolute; cap the log scale there
-map <- scan
-map$log_R0 <- pmin(pmax(log10(map$R0), -2), 0.5)
-map$log_food <- pmin(pmax(log10(map$food), -2), 0.5)
-p_map <- ggplot(map, aes(w_shift, theta)) +
-    geom_raster(aes(fill = log_R0)) +
-    geom_contour(aes(z = log_R0), breaks = 0, colour = "black",
-                 linewidth = 0.9) +
-    geom_contour(aes(z = log_food), breaks = 0, colour = "black",
-                 linewidth = 0.6, linetype = "dashed") +
-    geom_point(data = map[map$converged & map$max_real_part > 0, ],
-               shape = 4, size = 2) +
-    annotate("label", x = 0.2, y = 0.003, size = 3.3,
-             label = "Food barrier\n(Van Leeuwen et al.)") +
-    annotate("label", x = 0.26, y = 0.024, size = 3.3,
-             label = "Both barriers") +
-    annotate("label", x = 0.5, y = 0.027, size = 3.3,
-             label = "Larval-predation barrier\n(cultivation–depensation)") +
-    annotate("label", x = 0.53, y = 0.0025, size = 3.3,
-             label = "Cod invade:\nno bistability") +
-    scale_fill_gradient2(low = "#2a78d6", mid = "white", high = "#eb6834",
-                         midpoint = 0, limits = c(-2, 0.5), na.value = "grey80",
-                         breaks = c(-2, -1, 0, 0.5),
-                         labels = c("≤ 0.01", "0.1", "1", "3"),
-                         name = expression(R[0] ~ "of cod in the cod-free state")) +
-    scale_x_continuous(expand = c(0, 0)) +
-    scale_y_continuous(expand = c(0, 0)) +
-    labs(x = "Size at which cod larval food runs out, w_shift (g)",
-         y = "Sprat predation on cod larvae, θ") +
-    theme(legend.key.width = unit(1.5, "cm"))
-ggsave("combined/regime_map.png", p_map, width = 8, height = 5.5, dpi = 110,
-       bg = "white")
-
-dec <- scan[scan$theta %in% c(0.01, 0.02) & scan$converged, ]
-dec_long <- rbind(
-    data.frame(dec[c("w_shift", "theta")], factor = "Food (growth only)",
-               value = dec$food),
-    data.frame(dec[c("w_shift", "theta")],
-               factor = "Larval predation (mortality only)",
-               value = dec$larval_predation),
-    data.frame(dec[c("w_shift", "theta")], factor = "Both (R0)",
-               value = dec$R0))
-dec_long$factor <- factor(dec_long$factor, levels = unique(dec_long$factor))
-dec_long$theta <- paste("θ =", dec_long$theta)
-p_dec <- ggplot(dec_long[dec_long$value > 0, ],
-                aes(w_shift, value, colour = factor)) +
-    geom_hline(yintercept = 1, colour = "grey45", linetype = "dashed") +
-    geom_line(linewidth = 0.9) +
-    geom_point(size = 1.4) +
-    facet_wrap(~theta) +
-    scale_y_log10() +
-    scale_colour_manual(values = c("#eb6834", "#2a78d6", "grey20"),
-                        name = NULL) +
-    labs(x = "Size at which cod larval food runs out, w_shift (g)",
-         y = "R0 of a rare cod in the cod-free state")
-ggsave("combined/decomposition.png", p_dec, width = 8, height = 4, dpi = 110,
-       bg = "white")
-
-intro$point <- factor(sprintf("w_shift = %.2f g, θ = %.2f", intro$w_shift,
-                              intro$theta),
-                      levels = sprintf("w_shift = %.2f g, θ = %.2f",
-                                       intro_points$w_shift,
-                                       intro_points$theta))
-intro$introduced <- factor(paste0(100 * intro$factor, " %"),
-                           levels = paste0(100 * intro_factors, " %"))
-p_intro <- ggplot(intro, aes(time, cod, colour = introduced)) +
-    geom_hline(yintercept = 1, colour = "grey45", linetype = "dashed") +
-    geom_line(linewidth = 0.9) +
-    facet_wrap(~point, ncol = 3) +
-    scale_y_log10() +
-    coord_cartesian(ylim = c(1e-6, 3)) +
-    scale_colour_manual(values = c("#86b6ef", "#2a78d6", "#0d366b"),
-                        name = "Cod introduced (fraction of cod state)") +
-    labs(x = "Years after introduction",
-         y = "Cod biomass / cod-state biomass")
-ggsave("combined/introductions.png", p_intro, width = 9, height = 5.5,
-       dpi = 110, bg = "white")
 
 # Summary ------------------------------------------------------------------
 
