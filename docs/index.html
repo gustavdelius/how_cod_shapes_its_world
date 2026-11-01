@@ -56,7 +56,26 @@ div.sourceCode
 @media screen {
 pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
-</style>
+
+div.csl-bib-body { }
+div.csl-entry {
+clear: both;
+}
+.hanging-indent div.csl-entry {
+margin-left:2em;
+text-indent:-2em;
+}
+div.csl-left-margin {
+min-width:2em;
+float:left;
+}
+div.csl-right-inline {
+margin-left:2em;
+padding-left:1em;
+}
+div.csl-indent {
+margin-left: 2em;
+}</style>
 
 
 <script>/*!
@@ -2364,6 +2383,7 @@ window.Quarto = {
   <li><a href="#comparison" id="toc-comparison" class="nav-link" data-scroll-target="#comparison"><span class="header-section-number">6</span> How the mizer model compares with the paper</a></li>
   <li><a href="#numerical-checks" id="toc-numerical-checks" class="nav-link" data-scroll-target="#numerical-checks"><span class="header-section-number">7</span> Numerical checks</a></li>
   <li><a href="#reproducing-this-document" id="toc-reproducing-this-document" class="nav-link" data-scroll-target="#reproducing-this-document"><span class="header-section-number">8</span> Reproducing this document</a></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
   </ul>
 </nav>
 </div>
@@ -2441,7 +2461,7 @@ window.Quarto = {
 </div>
 <section id="summary" class="level1" data-number="1">
 <h1 data-number="1"><span class="header-section-number">1</span> Summary</h1>
-<p>Van Leeuwen, De Roos &amp; Persson (2008) argued that collapsed cod stocks may fail to recover even when fishing stops, because cod shapes the size structure of its prey to its own benefit. Cod predation thins the sprat population, which relaxes the competition for food among the surviving sprat. They then grow and reproduce faster, so more small sprat are produced, and small sprat are the food that juvenile cod need. Without cod, sprat become a stunted population of food-limited adults that produce few young. Juvenile cod then starve in a sea full of fish. The result is an <strong>emergent Allee effect</strong>: cod do well at high density and cannot increase from low density, so the community has two alternative stable states.</p>
+<p><span class="citation" data-cites="vanleeuwen2008">Van Leeuwen et al. (<a href="#ref-vanleeuwen2008" role="doc-biblioref">2008</a>)</span> argued that collapsed cod stocks may fail to recover even when fishing stops, because cod shapes the size structure of its prey to its own benefit. Cod predation thins the sprat population, which relaxes the competition for food among the surviving sprat. They then grow and reproduce faster, so more small sprat are produced, and small sprat are the food that juvenile cod need. Without cod, sprat become a stunted population of food-limited adults that produce few young. Juvenile cod then starve in a sea full of fish. The result is an <strong>emergent Allee effect</strong>: cod do well at high density and cannot increase from low density, so the community has two alternative stable states.</p>
 <p>This document describes a two-species mizer model, cod feeding on sprat that feed on plankton, that reproduces this mechanism. All the density dependence in the model is emergent: recruitment has no imposed stock–recruitment ceiling (<code>R_max = Inf</code>). With identical parameters the model has</p>
 <ul>
 <li>a <strong>stable cod–sprat state</strong>, and</li>
@@ -2459,7 +2479,7 @@ window.Quarto = {
 </section>
 <section id="the-mechanism-in-the-paper" class="level1" data-number="2">
 <h1 data-number="2"><span class="header-section-number">2</span> The mechanism in the paper</h1>
-<p>Van Leeuwen et al. (2008) used a stage-structured biomass model with three life stages each for cod and sprat: juveniles, small adults and large adults. Food intake drives maturation, growth and reproduction. Its two key ingredients are:</p>
+<p><span class="citation" data-cites="vanleeuwen2008">Van Leeuwen et al. (<a href="#ref-vanleeuwen2008" role="doc-biblioref">2008</a>)</span> used a stage-structured biomass model with three life stages each for cod and sprat: juveniles, small adults and large adults. Food intake drives maturation, growth and reproduction. Its two key ingredients are:</p>
 <ol type="1">
 <li><strong>Food-dependent growth and reproduction of the prey, with juveniles more efficient than adults.</strong> Juvenile sprat have a higher ratio of maximum intake to maintenance than adult sprat, so when sprat compete for their shared zooplankton the adults are the first to run short. A sprat population without predators is limited by adult reproduction. It piles up as stunted small adults that barely reproduce, and it holds few juveniles.</li>
 <li><strong>Size-selective predation by cod.</strong> Juvenile cod can only eat small sprat. Adult cod eat all sizes.</li>
@@ -3054,7 +3074,7 @@ Table 3: Sprat-only model with an imposed mortality equal to a fraction of cod�
 </figure>
 </div>
 </div>
-<p>As the imposed mortality increases, sprat recruitment and the density of small sprat increase. The feeding level of newly settled cod crosses the critical level of 0.16, and the invasion fitness of cod rises above 1. Already 20 % of cod’s own predation pressure is enough. This is the overcompensation of De Roos et al. (2007): in a population limited by adult reproduction, extra mortality raises the production of young. At the full cod predation pressure the sprat population is the one in the cod state, where cod are exactly replacing themselves (<span class="math inline">\(R_0\)</span> ≈ 1). For fractions between about 0.4 and 0.8 (not shown), the sprat-only model with fixed extra mortality settles on a limit cycle.</p>
+<p>As the imposed mortality increases, sprat recruitment and the density of small sprat increase. The feeding level of newly settled cod crosses the critical level of 0.16, and the invasion fitness of cod rises above 1. Already 20 % of cod’s own predation pressure is enough. This is the overcompensation of <span class="citation" data-cites="deroos2007">De Roos et al. (<a href="#ref-deroos2007" role="doc-biblioref">2007</a>)</span>: in a population limited by adult reproduction, extra mortality raises the production of young. At the full cod predation pressure the sprat population is the one in the cod state, where cod are exactly replacing themselves (<span class="math inline">\(R_0\)</span> ≈ 1). For fractions between about 0.4 and 0.8 (not shown), the sprat-only model with fixed extra mortality settles on a limit cycle.</p>
 </section>
 <section id="threshold" class="level2" data-number="5.4">
 <h2 data-number="5.4" class="anchored" data-anchor-id="threshold"><span class="header-section-number">5.4</span> An Allee threshold</h2>
@@ -3100,7 +3120,7 @@ Figure 4: Cod biomass after cod are introduced into the cod-free state, with th
 </section>
 <section id="ramp" class="level2" data-number="5.5">
 <h2 data-number="5.5" class="anchored" data-anchor-id="ramp"><span class="header-section-number">5.5</span> Collapse under fishing, and no recovery</h2>
-<p>This is the analogue of Fig. 3 of the paper. Starting from the cod state, the cod fishing mortality is zero for 20 years. It then rises linearly to <span class="math inline">\(F = 0.8\)</span>/yr over 40 years, and stops completely at year 60. As in the paper, a small immigration of cod is included, so that recovery would be possible if the dynamics allowed it. Here this is a constant inflow of recruits equal to 1 % of the cod-state recruitment.</p>
+<p>This is the analogue of Fig. 3 of <span class="citation" data-cites="vanleeuwen2008">Van Leeuwen et al. (<a href="#ref-vanleeuwen2008" role="doc-biblioref">2008</a>)</span>. Starting from the cod state, the cod fishing mortality is zero for 20 years. It then rises linearly to <span class="math inline">\(F = 0.8\)</span>/yr over 40 years, and stops completely at year 60. As in the paper, a small immigration of cod is included, so that recovery would be possible if the dynamics allowed it. Here this is a constant inflow of recruits equal to 1 % of the cod-state recruitment.</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
@@ -3165,7 +3185,7 @@ Figure 5: Response of the cod–sprat community to a period of increasing fishi
 </section>
 <section id="hysteresis" class="level2" data-number="5.6">
 <h2 data-number="5.6" class="anchored" data-anchor-id="hysteresis"><span class="header-section-number">5.6</span> Hysteresis in fishing effort</h2>
-<p>This is the analogue of Fig. 5 (top) of the paper. The cod state is followed with mizer’s <code>scanModel()</code> as the cod fishing effort increases in small steps. Each step starts from the state reached at the previous one.</p>
+<p>This is the analogue of Fig. 5 (top) of <span class="citation" data-cites="vanleeuwen2008">Van Leeuwen et al. (<a href="#ref-vanleeuwen2008" role="doc-biblioref">2008</a>)</span>. The cod state is followed with mizer’s <code>scanModel()</code> as the cod fishing effort increases in small steps. Each step starts from the state reached at the previous one.</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
@@ -3225,7 +3245,7 @@ Figure 6: Steady states as a function of the fishing mortality on cod. Blue: th
 </section>
 <section id="thinning" class="level2" data-number="5.7">
 <h2 data-number="5.7" class="anchored" data-anchor-id="thinning"><span class="header-section-number">5.7</span> Thinning the prey brings cod back</h2>
-<p>Van Leeuwen et al. suggested that if the prey population’s size structure is what keeps cod down, then <strong>thinning the prey</strong> should help cod recover. The <a href="#prey-only">prey-only experiment</a> suggests that this works in the mizer model too. Here we test it with the sprat trawl, which takes sprat above 1 g at <span class="math inline">\(F = 0.5\)</span>/yr. It runs for 20 or 30 years, starting in the cod-free state with the same small immigration of cod as above.</p>
+<p><span class="citation" data-cites="vanleeuwen2008">Van Leeuwen et al. (<a href="#ref-vanleeuwen2008" role="doc-biblioref">2008</a>)</span> suggested that if the prey population’s size structure is what keeps cod down, then <strong>thinning the prey</strong> should help cod recover. The <a href="#prey-only">prey-only experiment</a> suggests that this works in the mizer model too. Here we test it with the sprat trawl, which takes sprat above 1 g at <span class="math inline">\(F = 0.5\)</span>/yr. It runs for 20 or 30 years, starting in the cod-free state with the same small immigration of cod as above.</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
@@ -3398,7 +3418,17 @@ Figure 7: Cod biomass in the cod-free state (with immigration) when a sprat fis
 </tbody>
 </table>
 <p>Computed with mizer 3.4.0.9001 and R version 4.6.2 (2026-10-29).</p>
-<p><strong>Reference.</strong> Van Leeuwen, A., De Roos, A.M. &amp; Persson, L. (2008). How cod shapes its world. <em>Journal of Sea Research</em> 60, 89–104. doi:10.1016/j.seares.2008.02.008</p>
+</section>
+<section id="references" class="level1 unnumbered">
+<h1 class="unnumbered">References</h1>
+<div id="refs" class="references csl-bib-body hanging-indent" role="list">
+<div id="ref-deroos2007" class="csl-entry" role="listitem">
+De Roos, André M., Tim Schellekens, Tobias Van Kooten, Karen Van de Wolfshaar, David Claessen, and Lennart Persson. 2007. <span>“Food-Dependent Growth Leads to Overcompensation in Stage-Specific Biomass When Mortality Increases: The Influence of Maturation Versus Reproduction Regulation.”</span> <em>The American Naturalist</em> 170 (3): E59–76. <a href="https://doi.org/10.1086/520119">https://doi.org/10.1086/520119</a>.
+</div>
+<div id="ref-vanleeuwen2008" class="csl-entry" role="listitem">
+Van Leeuwen, Anieke, André M. De Roos, and Lennart Persson. 2008. <span>“How Cod Shapes Its World.”</span> <em>Journal of Sea Research</em> 60 (1-2): 89–104. <a href="https://doi.org/10.1016/j.seares.2008.02.008">https://doi.org/10.1016/j.seares.2008.02.008</a>.
+</div>
+</div>
 </section>
 
 </main>

@@ -15,6 +15,7 @@ format:
     fig-width: 8
     fig-height: 4.5
     fig-dpi: 110
+bibliography: references.bib
 execute:
   cache: true
   warning: false
@@ -66,7 +67,7 @@ small_sprat <- sapply(states, function(p)
 
 # Summary
 
-Van Leeuwen, De Roos & Persson (2008) argued that collapsed cod stocks may fail
+@vanleeuwen2008 argued that collapsed cod stocks may fail
 to recover even when fishing stops, because cod shapes the size structure of its
 prey to its own benefit. Cod predation thins the sprat population, which relaxes
 the competition for food among the surviving sprat. They then grow and reproduce
@@ -108,7 +109,7 @@ paper](#comparison) below lists the differences.
 
 # The mechanism in the paper
 
-Van Leeuwen et al. (2008) used a stage-structured biomass model with three life
+@vanleeuwen2008 used a stage-structured biomass model with three life
 stages each for cod and sprat: juveniles, small adults and large adults. Food
 intake drives maturation, growth and reproduction. Its two key ingredients are:
 
@@ -403,7 +404,7 @@ sprat increase. The feeding level of newly settled cod crosses the critical
 level of `r fmt(f_crit["Cod", i_cod], 2)`, and the invasion fitness of cod
 rises above 1. Already
 `r 100 * min(prey_only$fraction[prey_only$R0 > 1])` % of cod's own predation
-pressure is enough. This is the overcompensation of De Roos et al. (2007): in a
+pressure is enough. This is the overcompensation of @deroos2007: in a
 population limited by adult reproduction, extra mortality raises the
 production of young. At the full cod predation pressure the sprat population
 is the one in the cod state, where cod are exactly replacing themselves
@@ -445,7 +446,7 @@ ggplot(intro, aes(time, cod, colour = factor)) +
 
 ## Collapse under fishing, and no recovery {#ramp}
 
-This is the analogue of Fig. 3 of the paper. Starting from the cod state, the
+This is the analogue of Fig. 3 of @vanleeuwen2008. Starting from the cod state, the
 cod fishing mortality is zero for 20 years. It then rises linearly to
 $F = 0.8$/yr over 40 years, and stops completely at year 60. As in the paper,
 a small immigration of cod is included, so that recovery would be possible if
@@ -508,7 +509,7 @@ sprat population in which they cannot grow.
 
 ## Hysteresis in fishing effort {#hysteresis}
 
-This is the analogue of Fig. 5 (top) of the paper. The cod state is followed
+This is the analogue of Fig. 5 (top) of @vanleeuwen2008. The cod state is followed
 with mizer's `scanModel()` as the cod fishing effort increases in small steps.
 Each step starts from the state reached at the previous one.
 
@@ -564,7 +565,7 @@ collapse: yield is highest just before it.
 
 ## Thinning the prey brings cod back {#thinning}
 
-Van Leeuwen et al. suggested that if the prey population's size structure is
+@vanleeuwen2008 suggested that if the prey population's size structure is
 what keeps cod down, then **thinning the prey** should help cod recover. The
 [prey-only experiment](#prey-only) suggests that this works in the mizer model
 too. Here we test it with the sprat trawl, which takes sprat above 1 g at
@@ -737,6 +738,7 @@ knitr::kable(check_tab, align = "lrrr", row.names = FALSE)
 Computed with mizer `r packageVersion("mizer")` and
 `r R.version.string`.
 
-**Reference.** Van Leeuwen, A., De Roos, A.M. & Persson, L. (2008). How cod
-shapes its world. *Journal of Sea Research* 60, 89–104.
-doi:10.1016/j.seares.2008.02.008
+# References {.unnumbered}
+
+::: {#refs}
+:::
