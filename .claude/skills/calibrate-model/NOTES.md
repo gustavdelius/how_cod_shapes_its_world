@@ -4,6 +4,11 @@
   `tuneSteadyState()`. That function holds births fixed, which cuts the very
   feedback the model is about: cod predation raising sprat reproduction. Both
   steady states are found with fixed parameters by `projectUntilSettled()`.
+  Tested: from the cod-free state plus 3e13 g of cod, `tuneSteadyState()` kept
+  sprat recruitment at its cod-free value, settled on only 1.25e11 g of cod and
+  set cod `erepro` to 1.7e34. Projection reaches 8.67e12 g. Reported upstream
+  for the skills as https://github.com/sizespectrum/mizerAgents/issues/12 and
+  for the help page as https://github.com/sizespectrum/mizer/issues/631.
 - The cod-free state is reached by setting cod abundance to zero. The cod state
   is reached by adding cod to the cod-free state at 3e13 g (mizer's default
   initial cod spectrum shape, rescaled). 1e13 g dies out. Introductions far
