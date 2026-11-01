@@ -7,6 +7,10 @@ Sea Research 60: 89–104 ([doi:10.1016/j.seares.2008.02.008](https://doi.org/10
 
 **Read the document:** <https://gustavdelius.github.io/how_cod_shapes_its_world/>.
 
+**Prototype:** a second document combines this mechanism with
+cultivation–depensation, in which adult sprat eat cod larvae, in one model:
+<https://gustavdelius.github.io/how_cod_shapes_its_world/combined_model.html>.
+
 ## The mechanism
 
 Cod predation thins the sprat population. The surviving sprat have more food,
@@ -51,10 +55,14 @@ state and a different size pattern of cod predation on sprat.
 |:--|:--|
 | [`how_cod_shapes_its_world.qmd`](how_cod_shapes_its_world.qmd) | The document: model description, results and comparison with the paper |
 | [`docs/index.html`](docs/index.html) | The rendered document (self-contained), published with GitHub Pages |
-| [`_quarto.yml`](_quarto.yml) | Quarto project settings: render the document into `docs/` |
+| [`_quarto.yml`](_quarto.yml) | Quarto project settings: render the documents into `docs/` |
 | [`R/build_model.R`](R/build_model.R) | Model definition and the code that finds both steady states |
 | [`R/analysis_functions.R`](R/analysis_functions.R) | Life-stage biomasses, cod invasion fitness R0, immigration, fishing-effort continuation |
 | `model/` | The two steady states as saved `MizerParams` objects (`readParams()`) |
+| [`combined_model.qmd`](combined_model.qmd) | Prototype document: the model with cod eggs and larvae, which sprat eat, so that it also shows cultivation–depensation |
+| [`docs/combined_model.html`](docs/combined_model.html) | The rendered prototype document, published with GitHub Pages |
+| [`R/combined_model.R`](R/combined_model.R) | The prototype model, its anchor states, and the decomposition of cod invasion fitness |
+| [`combined/`](combined/README.md) | The prototype's computations and their results, which the prototype document reads |
 | `original_paper.pdf` | The paper |
 
 The `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and `MIZER-AGENTS.md` files and the
@@ -88,12 +96,22 @@ Render the document to `docs/index.html` (a few minutes on the first run;
 knitr caches the results afterwards):
 
 ```bash
-quarto render
+quarto render how_cod_shapes_its_world.qmd
 ```
+
+The prototype document `combined_model.qmd` reads the results of the scripts
+in `combined/` (see [`combined/README.md`](combined/README.md)) and renders in
+seconds to `docs/combined_model.html`:
+
+```bash
+quarto render combined_model.qmd
+```
+
+`quarto render` with no file renders both documents.
 
 GitHub Pages publishes `docs/` once the repository's Settings → Pages is set
 to deploy from the `main` branch, folder `/docs`. Commit the re-rendered
-`docs/index.html` to update the published page.
+HTML files to update the published pages.
 
 To load the model in an R session:
 

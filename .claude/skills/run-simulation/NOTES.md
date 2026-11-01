@@ -16,3 +16,19 @@
 - `scanEffort()` with no gear sets every gear. The model has two gears, so use
   `scanEffort("Trawl")`, and give `effort` as a named vector or a time × gear
   array.
+- Combined model (second order, 320 classes, size diffusion): a 200-year
+  `project(method = "tr_bdf2", dt = 0.1)` takes about 20 s. One grid point
+  (two Newton solves, `getStability()`, four scheme-consistent R0 solves)
+  takes a few minutes. Run parallel workers with `OPENBLAS_NUM_THREADS=1
+  OMP_NUM_THREADS=1`, or the BLAS threads of 8 workers compete.
+- **Time step in the combined model: use dt = 0.1, not 0.5.** With the
+  second-order scheme and size diffusion, Euler with dt = 0.5 (the step the
+  cultivation-depensation repository uses to settle states) has a one-step
+  spectral radius of 1.08 in the cod-free state (`getDiscreteStability()`;
+  0.98 at dt = 0.1). The projection then drifts off the fixed point, and R0
+  computed from it is garbage. TR-BDF2 with dt = 0.5 is not safe either:
+  started exactly on a stable cod fixed point (max Re −0.105/yr), it stays
+  for about 150 years and then oscillates between 57 % and 111 % of it. At
+  dt = 0.1 both methods hold the fixed point. Euler is then about twice as
+  fast as TR-BDF2 (35 s against 62 s for 300 years) and has the same fixed
+  points, so `combined/fishing_branches.R` settles with Euler at dt = 0.1.
