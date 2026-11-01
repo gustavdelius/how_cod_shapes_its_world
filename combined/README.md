@@ -156,6 +156,58 @@ invasion analysis:
 At `w_shift` = 0.5 g, larval predation creates the bistability that food alone
 no longer provides, and the Allee threshold rises with θ.
 
+### Fishing
+
+![Fishing bifurcation](fishing_bifurcation.png)
+
+**Equilibrium biomass under cod fishing**, the analogue of Figure 3 of
+`paper.Rmd`. The model point is `w_shift` = 0.3 g, θ = 0.01, where both
+barriers act. Each step projects the model until every biomass changes by
+less than 10⁻⁵/yr, starting from the state of the previous step.
+
+* **Two sweeps.** Solid lines increase cod fishing from the cod state.
+  Dashed lines decrease it from the cod-free state, with cod topped up to
+  10⁻⁶ of their unfished abundance before each step.
+* **Fishing gear.** Cod fishing is the length-selective trawl of the
+  original model, so F_cod is the fishing mortality on fully selected cod.
+  The sprat fishery takes sprat above 1 g.
+* **Plot conventions.** Biomasses are relative to the unfished cod state.
+  Arrows mark where a branch ends and the system jumps.
+
+The two panels:
+
+* **Without sprat fishing**, the cod state persists up to F_cod = 0.27, with
+  cod at 76 % of their unfished biomass, and collapses at 0.28. The cod-free
+  state cannot be invaded at any F_cod (R0 = 0.34 at F_cod = 0). Reducing
+  fishing after the collapse does not bring cod back.
+* **With sprat fishing at F = 0.5**, the cod state collapses at 0.29, where
+  cod are already down to 37 % of their unfished biomass. The sprat fishery
+  makes the cod-free state invadable (R0 = 1.37 at F_cod = 0). Below
+  F_inv = 0.22, a cod seed invades and returns to the abundant state. The
+  hysteresis loop narrows to 0.22–0.28.
+
+Two differences from Figure 3 of `paper.Rmd`:
+
+* **Sprat fishing barely moves the collapse threshold** (0.28 to 0.29). In
+  `paper.Rmd` forage-fish harvest moves it from 0.16 to 0.25. Here it mainly
+  opens the way back.
+* **There is no low-abundance cod state.** In `paper.Rmd` a predator invading
+  under forage harvest first settles at low abundance, and full recovery needs
+  more forage harvest. Here the invader goes straight back to the abundant
+  state. The likely reason is the food mechanism: once established, cod thin
+  the sprat, which raises sprat recruitment and feeds juvenile cod.
+  `paper.Rmd`'s predator lacks this feedback, because there food works
+  against depensation.
+
+The steps at F_cod = 0.21 and 0.22 of the downward sweep with sprat fishing
+are left out. There R0 is within a few per cent of 1, and the seed had not
+settled after 3000 years. The return arrow is drawn at F_inv, where R0 = 1.
+
+The settling uses mizer's Euler method with Δt = 0.1. `paper.Rmd` settles
+with Δt = 0.5, but in this model that step is unstable: Euler's one-step map
+has a spectral radius of 1.08 in the cod-free state. TR-BDF2 with Δt = 0.5
+drifts away from a stable cod state after about 150 years.
+
 ## Effect of the numerics
 
 The first version of this prototype (commit `161199e`) used the original
@@ -199,8 +251,9 @@ The qualitative result is the same, but three things changed:
 
 ## Possible next steps
 
-* Fishing scenarios in the combined model: does larval predation change the
-  collapse threshold and the hysteresis of the original model?
+* The fishing thresholds across (`w_shift`, θ): does the collapse threshold
+  or the width of the hysteresis loop depend on which barrier holds cod back?
+  The figure above covers one point only.
 * Sensitivity to sprat cannibalism, which removes the barrier in `paper.Rmd`
   above θ_For,For ≈ 0.12.
 * Competition: let cod larvae eat the plankton spectrum instead of a fixed
@@ -218,3 +271,12 @@ It takes about an hour on 8 cores and writes `results.rds` and the three
 figures to this folder. It was computed with mizer 3.4.0.9001 and reads the
 two states of the original model from `model/`. Limiting BLAS to one thread
 per worker matters: otherwise the threads of the 8 workers compete.
+
+The fishing figure has its own script:
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript combined/fishing_branches.R
+```
+
+It takes about 15 minutes on 4 cores and writes `fishing_branches.rds` and
+`fishing_bifurcation.png`. With `--figures` it only redraws the figure.
