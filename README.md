@@ -11,10 +11,11 @@ Sea Research 60: 89–104 ([doi:10.1016/j.seares.2008.02.008](https://doi.org/10
 cultivation–depensation, in which adult sprat eat cod larvae, in one model:
 <https://gustavdelius.github.io/how_cod_shapes_its_world/combined_model.html>.
 
-**Background model:** a third document embeds cod and sprat in a fixed
-power-law background, built with the allometric workflow of
-[mizerEcopath](https://github.com/gustavdelius/mizerEcopath), and asks which
-of the two mechanisms survive:
+**Background model:** a third document embeds cod and sprat in a power-law
+background, built with the allometric workflow of
+[mizerEcopath](https://github.com/gustavdelius/mizerEcopath). The background
+mortality is fixed, and the background prey is depleted by what cod and sprat
+eat of it. The document asks which of the two mechanisms survive:
 <https://gustavdelius.github.io/how_cod_shapes_its_world/background_model.html>.
 
 ## The mechanism
