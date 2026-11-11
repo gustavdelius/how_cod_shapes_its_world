@@ -4,7 +4,7 @@
 #
 # Run from the repository root, with BLAS limited to one thread per worker:
 #   OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript background/run_fishing.R
-# It takes about 5 minutes on 8 cores and writes background/fishing.rds,
+# It takes about 20 minutes on 4 cores and writes background/fishing.rds,
 # which background_model.qmd reads.
 
 library(mizer)
@@ -16,21 +16,24 @@ source("R/background_model.R")
 
 cores <- as.integer(Sys.getenv("MC_CORES", min(8, detectCores())))
 
-# Two cod states, at the first two points of background/run_cases.R:
-#   * the coexistence state where it is stable;
+# Three cod states, at the first three points of background/run_cases.R:
+#   * the coexistence state where it is stable and cod cannot invade;
 #   * where it is the threshold, the state that cod reach from 20 % above it.
-#     That state does not have power-law rates.
+#     That state does not have power-law rates;
+#   * the coexistence state where cod can invade.
 cases <- data.frame(
     label = c("Coexistence state stable",
-              "Threshold, both persist above it"),
-    phi_prey = c(0.96, 0.72),
-    phi_larv = c(0.36, 0.24),
-    cod_resource = c(FALSE, TRUE),
-    from_above = c(FALSE, TRUE))
-# The stable coexistence state is lost at a very low fishing mortality, so the
-# first sequence is fine near zero
-F_cod_seq <- list(c(0, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.03),
-                  seq(0, 0.5, by = 0.025))
+              "Threshold, cod settle above it",
+              "No barrier"),
+    phi_prey = c(0.96, 0.72, 0.36),
+    phi_larv = c(0.36, 0.24, 0.48),
+    cod_resource = c(FALSE, TRUE, TRUE),
+    from_above = c(FALSE, TRUE, FALSE))
+# All three are lost at a very low fishing mortality, so the sequences are
+# fine near zero
+F_cod_seq <- list(c(seq(0, 0.01, by = 0.001), 0.02, 0.03),
+                  c(seq(0, 0.01, by = 0.001), 0.02, 0.03),
+                  seq(0, 0.05, by = 0.005))
 F_sprat_values <- c(0, 0.1, 0.25, 0.5, 1)
 
 effort <- function(F_cod, F_sprat) c(Trawl = F_cod, `Sprat trawl` = F_sprat)

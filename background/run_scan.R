@@ -1,12 +1,13 @@
 # Cod and sprat in a power-law background (see R/background_model.R and
 # background_model.qmd): the invasion fitness of cod in the cod-free state and
 # the stability of the coexistence state, over the strengths of the two
-# predation links, with and without cod feeding on the plankton.
+# predation links, with and without cod feeding on the plankton. The
+# background prey is at its default level.
 #
 # Run from the repository root, with BLAS limited to one thread per worker:
 #   OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript background/run_scan.R
-# It takes about an hour on 8 cores and writes background/scan.rds, which
-# background_model.qmd reads.
+# It takes about an hour and a half on 4 cores and writes
+# background/scan.rds, which background_model.qmd reads.
 
 library(mizer)
 library(parallel)
@@ -17,6 +18,14 @@ source("R/background_model.R")
 
 # Set the environment variable MC_CORES to use fewer workers
 cores <- as.integer(Sys.getenv("MC_CORES", min(8, detectCores())))
+
+#' Abundance of the background prey in `state` relative to `params`: the
+#' smallest and the largest ratio over its sizes (NA if there is none)
+background_prey_range <- function(state, params) {
+    prey <- !is_plankton(params) & initialNResource(params) > 0
+    if (!any(prey)) return(c(NA, NA))
+    range((initialNResource(state) / initialNResource(params))[prey])
+}
 
 #' Everything the regime map needs at one point
 #'
@@ -35,12 +44,15 @@ scan_point <- function(phi_prey, phi_larv, cod_resource, ...) {
     above <- background_project(p, 1.2, t_max = if (unstable) 1000 else 300)
     b_above <- attr(above, "biomass")
     last <- tail(seq_len(nrow(b_above)), 100)
+    prey_free <- background_prey_range(no_cod, p)
     row <- cbind(
         data.frame(phi_prey = phi_prey, phi_larv = phi_larv,
                    cod_resource = cod_resource,
                    lead_re = Re(lead), lead_im = Im(lead),
                    sprat_free = getBiomass(no_cod)[["Sprat"]] / B[["Sprat"]],
-                   sprat_free_drift = biomass_drift(no_cod)[["Sprat"]]),
+                   sprat_free_drift = biomass_drift(no_cod)[["Sprat"]],
+                   background_free_min = prey_free[1],
+                   background_free_max = prey_free[2]),
         background_decomposition(p, no_cod),
         below_cod = getBiomass(below)[["Cod"]] / B[["Cod"]],
         below_sprat = getBiomass(below)[["Sprat"]] / B[["Sprat"]],

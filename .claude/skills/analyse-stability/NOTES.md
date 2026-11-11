@@ -81,13 +81,21 @@ Findings for the first, upwind version (150 classes, no physical diffusion):
 
 ## Background model (`R/background_model.R`)
 
-Cod and sprat in a fixed power-law background, built with the mizerEcopath
+Cod and sprat in a power-law background, built with the mizerEcopath
 workflow (`newAllometricParams()` → `setFeedingLevels()` →
-`makeInteracting()` → `setResourceInteraction()`). Upwind, 200 size classes.
+`makeInteracting()` → `setResourceInteraction()`) and then
+`set_background_response()`. The background mortality is fixed. The
+background prey is depletable (semichemostat, `background_level` 0.5).
+Upwind, 200 size classes.
 
+- **The background prey is in the resource slot** (`n_pp` above
+  `w_pp_cutoff`, the plankton below it), with custom `Encounter` and
+  `ResourceMort` rate functions. That is what makes `getStability()`, the
+  Newton solver and `cod_R0()` treat it as part of the state. A
+  `setComponent()` component would be held fixed in the Jacobian.
 - **`getStability()` cannot show how strongly a stable state is damped
-  here.** `resource_level(p) <- 0.5` sets the plankton replenishment rate
-  proportional to the grazing on it, so plankton sizes that no fish eats have
+  here.** `resource_level(p) <-` sets the replenishment rate proportional to
+  the grazing, so plankton and background-prey sizes that no fish eats have
   rates down to zero. Each contributes a real eigenvalue −(rate + mortality):
   a ladder from about −1e-3/yr up to rounding error (±1e-13/yr). The largest
   can come out as +6e-14, so `$stable` is `FALSE` for a stable state. Count a
@@ -96,22 +104,37 @@ workflow (`newAllometricParams()` → `setFeedingLevels()` →
   −(`resource_rate` + `getResourceMort`) and dropping those eigenvalues does
   not isolate the fish modes: weakly grazed sizes are shifted just enough to
   escape a 1e-3 relative tolerance.
-- **The coexistence state is mostly a saddle.** One real positive
-  eigenvalue, up to 0.2/yr. It is stable only at a strong prey link and weak
-  larval predation (`phi_prey` ≥ 0.6 with `phi_larv` 0.24, or ≥ 0.84 with
-  0.36, cod larvae not eating plankton). With cod larvae eating plankton it
-  is unstable everywhere except `phi_prey` 0.96, `phi_larv` 0. Reason: the
-  background feeds cod whatever their number, so the only stabilising
-  feedback is sprat depletion as food.
-- Cod started 20 % above a saddle: settle or cycle with fewer sprat
-  (`phi_prey` ≥ 0.6), drive sprat extinct (`phi_prey` ≤ 0.48; then grow
-  without bound if they do not eat plankton), or overshoot and die out
-  (`phi_prey` ≥ 0.72 with strong larval predation).
+- **Where cod can invade the cod-free state, the coexistence state is
+  stable; behind a barrier it is mostly a saddle.** The scan (81 points per
+  variant) has a barrier at 40 points with cod larvae eating plankton and at
+  24 without. The coexistence state is stable at only 3 and 5 of those, in a
+  narrow band next to R0 = 1. Elsewhere behind the barrier it has one real
+  positive eigenvalue, up to 0.2/yr.
+- Cod started 20 % above a saddle settle with 1.1–1.6 times the cod and
+  fewer sprat, cycle (strong links), or die out (strongest links). They never
+  drive sprat extinct or grow without bound: the background prey limits them.
+- Two slow points, both with cod larvae eating plankton:
+  - `phi_prey` 0.36, `phi_larv` 0.72: R0 = 1.03 and the coexistence state is
+    unstable (0.005/yr). Cod cycle between 0.55 and 1.4 times their
+    coexistence biomass with a period of about 2300 years.
+  - `phi_prey` 0.6, `phi_larv` 0.24: a complex leading pair
+    (0.0010 ± 0.0013i /yr). Cod started above pass the state and die out,
+    which takes more than 1000 years. The scan counts cod below 1 % after
+    1000 years as dying.
+- **The abundance of the background prey (`background_abundance`) changes
+  eigenvalues and basins but not steady states or R0.** Ten times the
+  abundance makes the prey respond ten times as slowly: at `phi_prey` 0.72,
+  `phi_larv` 0.24 the instability grows at 0.046/yr instead of 0.031/yr, and
+  cod started 20 % above the state die out instead of settling above it.
+- Background prey that only large cod eat replenishes slowly (0.006/yr at
+  5 kg). After removing cod it is still recovering after 300 years, so
+  `background_cod_free()` sets the resource to its steady state for the fish
+  at the end of the projection.
 - A cod Beverton–Holt relation with reproduction level L multiplies R0 in
-  the cod-free state by 1/(1 − L). At L = 0.5 it stabilises the coexistence
-  state only where cod then invade the cod-free state.
+  the cod-free state by 1/(1 − L). It does not stabilise the coexistence
+  state at any of the four points tried where it is unstable.
 - Newton's method stalls on the cod-free state (residual about 2e-4, cod
-  exactly zero). The cod-free state is found by projection instead (drift
-  below 1e-5/yr after 300 years).
-- Cost per point, single-threaded: model build 5 s, `getStability()` 14 s,
-  300-year projection 25 s, five `cod_R0()` solves a few seconds.
+  exactly zero) and mostly on the states above a saddle (residual 1e-5 to
+  1e-4). Those states are found by projection instead.
+- Cost, single-threaded: about 0.1 s per projected year (three times the
+  cost with a fixed background), so `scan_point()` takes 100–160 s.

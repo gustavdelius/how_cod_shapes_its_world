@@ -29,6 +29,20 @@
 - The built model is recalculation-safe: `species_params(p) <-
   species_params(p)` changes no rate. (`all.equal()` on the rate arrays
   reports a difference, but only in the `params` attribute they carry.)
+- The background prey (`set_background_response()`) is stored in the resource
+  spectrum above `w_pp_cutoff`, with a kernel matrix (rows species × size,
+  columns `w_full`) in `other_params(p)$background` and the rate functions
+  `background_encounter()` and `background_resource_mort()`.
+  `resource_level(p) <-` takes a vector over `w_full`, so the plankton and
+  the background prey can sit at different levels. `background_level = 1`
+  skips the step and gives the fixed background.
+- The model needs mizer ≥ 3.4.0.9003 and mizerEcopath 0.4.0 (branch
+  `extract-mizerFromEcopath`) with mizerFromEcopath. With mizer 3.4.0.9001
+  and mizerEcopath 0.3.2.9000, `setResourceInteraction()` fails with
+  "non-conformable arrays".
+- `setResourceInteraction()` warns that "the resource capacity has been set
+  manually and so it was not rebalanced". It is harmless here:
+  `resource_level(p) <-` sets the capacity afterwards.
 - `readParams()` of mizer 3.4.0.9003 fails on `model/*.rds`, which were saved
   by a 3.4.0.9001 build that predates the `defaults_edition` slot:
   "defaults_edition must be a single number of at least 1". The background
