@@ -11,6 +11,12 @@ Sea Research 60: 89–104 ([doi:10.1016/j.seares.2008.02.008](https://doi.org/10
 cultivation–depensation, in which adult sprat eat cod larvae, in one model:
 <https://gustavdelius.github.io/how_cod_shapes_its_world/combined_model.html>.
 
+**Background model:** a third document embeds cod and sprat in a fixed
+power-law background, built with the allometric workflow of
+[mizerEcopath](https://github.com/gustavdelius/mizerEcopath), and asks which
+of the two mechanisms survive:
+<https://gustavdelius.github.io/how_cod_shapes_its_world/background_model.html>.
+
 ## The mechanism
 
 Cod predation thins the sprat population. The surviving sprat have more food,
@@ -63,6 +69,10 @@ state and a different size pattern of cod predation on sprat.
 | [`docs/combined_model.html`](docs/combined_model.html) | The rendered prototype document, published with GitHub Pages |
 | [`R/combined_model.R`](R/combined_model.R) | The prototype model, its anchor states, and the decomposition of cod invasion fitness |
 | [`combined/`](combined/README.md) | The prototype's computations and their results, which the prototype document reads |
+| [`background_model.qmd`](background_model.qmd) | Background-model document: cod and sprat with power-law encounter and mortality in the coexistence state, of which only part is predation between them |
+| [`docs/background_model.html`](docs/background_model.html) | The rendered background-model document |
+| [`R/background_model.R`](R/background_model.R) | The background model, its cod-free state, and the decomposition of cod invasion fitness |
+| [`background/`](background/README.md) | The background model's computations and their results |
 | `original_paper.pdf` | The paper |
 
 The `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and `MIZER-AGENTS.md` files and the
@@ -107,7 +117,19 @@ seconds to `docs/combined_model.html`:
 quarto render combined_model.qmd
 ```
 
-`quarto render` with no file renders both documents.
+The background-model document `background_model.qmd` works the same way with
+the scripts in `background/` (see [`background/README.md`](background/README.md)).
+It also needs the mizerEcopath package:
+
+```r
+remotes::install_github("gustavdelius/mizerEcopath")
+```
+
+```bash
+quarto render background_model.qmd
+```
+
+`quarto render` with no file renders all three documents.
 
 GitHub Pages publishes `docs/` once the repository's Settings → Pages is set
 to deploy from the `main` branch, folder `/docs`. Commit the re-rendered

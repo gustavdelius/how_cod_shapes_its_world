@@ -1,0 +1,905 @@
+---
+title: "Cod and sprat in a power-law background"
+subtitle: "Do the two Allee mechanisms survive when the rest of the community is a fixed background?"
+date: today
+# Rendered to docs/background_model.html (see _quarto.yml) for GitHub Pages
+output-file: background_model.html
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    code-fold: true
+    code-summary: "Code"
+    embed-resources: true
+    fig-width: 8
+    fig-height: 4.5
+    fig-dpi: 110
+bibliography: references.bib
+execute:
+  # The document mostly reads the results of the scripts in background/,
+  # which knitr's cache would not notice changing
+  cache: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+library(mizer)
+library(ggplot2)
+options(mizer_info_level = 0)
+source("R/build_model.R")
+source("R/combined_model.R")
+source("R/background_model.R")
+
+# Results of the scripts in background/
+res <- readRDS("background/scan.rds")
+scan <- res$scan
+cases <- readRDS("background/cases.rds")
+fishing <- readRDS("background/fishing.rds")
+
+col_species <- c(Sprat = "#2a78d6", Cod = "#eb6834")
+theme_set(theme_minimal(base_size = 12) +
+              theme(panel.grid.minor = element_blank(),
+                    legend.position = "top",
+                    strip.text = element_text(face = "bold", hjust = 0)))
+fmt <- function(x, digits = 2) format(signif(x, digits), big.mark = ",",
+                                      scientific = FALSE, trim = TRUE)
+#' A biomass relative to the coexistence state, as text
+biomass_text <- function(x, alive = 1e-3) {
+    ifelse(x < alive, "dies out",
+           ifelse(x > 1e3, "> 1000×", sprintf("%.2f×", x)))
+}
+#' "min–max" of x with a fixed number of decimals
+range_text <- function(x, decimals = 2) {
+    paste(sprintf(paste0("%.", decimals, "f"), range(x)), collapse = "–")
+}
+#' The scan result at one grid point
+at <- function(phi_prey, phi_larv, cod_resource) {
+    scan[abs(scan$phi_prey - phi_prey) < 1e-9 &
+             abs(scan$phi_larv - phi_larv) < 1e-9 &
+             scan$cod_resource == cod_resource, ]
+}
+variant_label <- function(cod_resource) {
+    factor(ifelse(cod_resource, "Cod larvae eat plankton",
+                  "Cod larvae eat background food only"),
+           levels = c("Cod larvae eat background food only",
+                      "Cod larvae eat plankton"))
+}
+scan$variant <- variant_label(scan$cod_resource)
+```
+
+```{r}
+#| label: classify
+# What happens at each point of the scan
+#   barrier    a rare cod cannot invade the cod-free state
+#   unstable   the coexistence state has an eigenvalue with a positive real
+#              part (well above rounding error)
+# and, where it is unstable, what is left 1000 years after cod are started
+# 20 % above it
+scan$barrier <- scan$R0 < 0.999
+scan$unstable <- scan$lead_re > 1e-6
+alive <- 1e-3
+regimes <- c("No barrier: cod invade",
+             "Barrier. Coexistence state stable",
+             "Barrier. Threshold: both species persist above it",
+             "Barrier. Threshold: cod take over above it",
+             "Barrier. Cod die out from above and below")
+scan$regime <- factor(regimes[with(scan, ifelse(
+    !barrier, 1, ifelse(
+        !unstable, 2, ifelse(
+            above_cod < alive, 5, ifelse(above_sprat < alive, 4, 3)))))],
+    levels = regimes)
+n_regime <- function(k, cod_resource) {
+    sum(scan$regime == regimes[k] & scan$cod_resource == cod_resource)
+}
+# The links that are switched on
+on <- scan[scan$phi_prey > 0, ]
+```
+
+```{r}
+#| label: numbers
+# The coexistence state with both links close to their largest strength
+p_max <- new_background_params(phi_prey = 0.96, phi_larv = 0.96)
+shares <- background_shares(p_max)
+theta_max <- other_params(p_max)$background$theta_max
+sp_max <- as.data.frame(species_params(p_max))
+dlnw <- log(w(p_max)[2] / w(p_max)[1])
+#' Size at which a share is largest
+w_peak <- function(x) w(p_max)[which.max(x)]
+#' Share at the size class nearest to w
+share_at <- function(x, w0) x[which.min(abs(w(p_max) - w0))]
+# The same state with the links at half strength: every rate is the same
+p_half <- new_background_params(phi_prey = 0.48, phi_larv = 0.48)
+# (at the sizes at which the species occur)
+present <- initialN(p_max) > 0
+same_rates <- max(abs(getEGrowth(p_half) / getEGrowth(p_max) - 1)[present],
+                  abs(getMort(p_half) / getMort(p_max) - 1)[present],
+                  na.rm = TRUE)
+
+# Without competition: the larval predation that stops cod invading
+base <- scan[!scan$cod_resource & scan$phi_prey > 0, ]
+theta_inv <- sapply(sort(unique(base$phi_prey)), function(pp) {
+    d <- base[abs(base$phi_prey - pp) < 1e-9, ]
+    approx(d$R0, d$phi_larv, xout = 1)$y
+})
+theta_inv <- theta_inv[!is.na(theta_inv)]
+
+sens <- cases$sensitivity
+intro <- cases$intro
+pts <- cases$points
+# Scan results at the four points
+pt <- lapply(seq_len(nrow(pts)), function(i) {
+    at(pts$phi_prey[i], pts$phi_larv[i], pts$cod_resource[i])
+})
+
+# Fishing
+fb <- fishing$branches
+fb$sweep <- factor(fb$sweep, levels = fishing$sweeps)
+fb$case <- factor(fb$case, levels = fishing$cases$label)
+abundant <- 0.1
+up <- fb[fb$sweep == fishing$sweeps[1], ]
+up1 <- up[up$case == fishing$cases$label[1], ]
+up2 <- up[up$case == fishing$cases$label[2], ]
+down <- fb[fb$sweep == fishing$sweeps[2], ]
+#' Last fishing mortality with abundant cod, and the first without
+last_F <- function(d) max(d$F_cod[d$Cod > abundant])
+collapse_F <- function(d) min(d$F_cod[d$F_cod > last_F(d)])
+sf <- fishing$sprat_fishery
+sf1 <- sf[sf$case == fishing$cases$label[1], ]
+sf2 <- sf[sf$case == fishing$cases$label[2], ]
+```
+
+# Summary
+
+The [combined model](combined_model.html) showed two mechanisms that can keep
+a collapsed cod stock from recovering: the emergent Allee effect of
+@vanleeuwen2008, in which a rare cod finds too little sprat to eat, and
+cultivation–depensation [@walters2001cultivation], in which abundant sprat eat
+cod eggs and larvae. In that model cod, sprat and plankton are the whole
+community.
+
+Here the two species are embedded in a **fixed power-law background**. In the
+coexistence state every fish meets food and dies at power-law rates, as in a
+community with a Sheldon spectrum. Only part of those rates comes from the
+other species and from the plankton. The rest does not respond to anything.
+Two parameters, `phi_prey` and `phi_larv`, set how much of the power-law
+rates the two predation links account for, from none (0) to as much as they
+can (1).
+
+The main results:
+
+* **Cultivation–depensation persists.** Sprat predation on cod larvae lowers
+  the invasion fitness $R_0$ of cod in the cod-free state by a factor of up
+  to `r fmt(1 / min(scan$larval_predation), 2)`. On its own it stops cod
+  invading from a `phi_larv` of about
+  `r range_text(theta_inv, 2)`, as long as cod eat enough sprat to hold
+  them down.
+* **The mechanism of Van Leeuwen et al. does not.** Sprat as food *raise*
+  $R_0$ in the cod-free state, by a factor of up to
+  `r fmt(max(scan$prey), 2)`. In a power-law background, cod depend on sprat
+  only at 30 g to 1 kg, when they eat adult sprat, and there are more adult
+  sprat without cod.
+* **Competition for plankton takes its place.** If cod larvae eat plankton,
+  the more numerous sprat leave them less. That lowers $R_0$ by a factor of
+  up to `r fmt(1 / min(scan$competition), 2)` and stops cod invading at every
+  point of the scan, even without larval predation.
+* **The coexistence state is rarely the cod state.** The background feeds
+  cod whatever their number, so cod lose the density dependence that made
+  the cod state stable. Over most of the scan the power-law state is
+  unstable: it is the Allee threshold itself. Cod started below it die out.
+  Cod started above it settle at a state with fewer sprat, take over
+  completely, or overshoot and die out too.
+* **The cod states are fragile.** Where the coexistence state is stable, a
+  cod fishing mortality of `r collapse_F(up1)`/yr is enough to collapse it.
+  A cod state above the threshold collapses between
+  `r last_F(up2)` and `r collapse_F(up2)`/yr. The combined model's cod state
+  persisted up to 0.27/yr. Cod do not return when fishing stops.
+* **Dilution weakens the barriers smoothly.** With both links at half
+  strength, $R_0$ is `r fmt(at(0.48, 0.48, FALSE)$R0, 2)` without and
+  `r fmt(at(0.48, 0.48, TRUE)$R0, 2)` with competition. At a quarter it is
+  `r fmt(at(0.24, 0.24, FALSE)$R0, 2)` and
+  `r fmt(at(0.24, 0.24, TRUE)$R0, 2)`.
+
+# The model {#model}
+
+## A fixed background
+
+In the [cod–sprat model](index.html) and in the
+[combined model](combined_model.html), cod, sprat and plankton are the whole
+community. All sprat mortality above 0.01 g is cod predation or a constant,
+and cod above the diet-shift size eat sprat or starve. Real cod and sprat
+have many other predators and prey. Those soften every feedback between the
+two species.
+
+Here the two species live in a community that is not modelled. In the
+coexistence state every individual
+
+* meets food at a rate proportional to $w^n$, with $n = 0.7$, and
+* dies at a rate proportional to $w^{n-1}$,
+
+as it would in a community with a Sheldon spectrum. Only part of that food
+and of that mortality comes from the modelled species and from the plankton.
+The rest is a **fixed background**: an external encounter rate and an external
+mortality that do not change when cod or sprat do.
+
+## Construction
+
+`new_background_params()` in `R/background_model.R` builds the model with the
+allometric workflow of the mizerEcopath package:
+
+1. **`newAllometricParams()`** sets up cod and sprat without any interaction.
+   Each species has a power-law encounter rate, chosen to give its age at
+   maturity, and a power-law mortality, chosen so that the juvenile biomass
+   density falls as $w^{-0.2}$. There is no satiation and no metabolic loss.
+   The species are in steady state, with the biomasses of the cod state of the
+   [cod–sprat model](index.html).
+2. **`setFeedingLevels()`** introduces satiation and metabolism: a feeding
+   level of 0.6 and a critical feeding level of 0.2 at all sizes. It raises
+   the encounter rate so that growth is unchanged. From here on the species
+   respond to a change in food.
+3. **`makeInteracting()`** switches on two predation links: cod eat sprat, and
+   sprat eat cod eggs and larvae. Whatever predation this creates is
+   subtracted from the external encounter and the external mortality.
+4. **`setResourceInteraction()`** lets the species feed on a dynamic plankton
+   resource, a power law up to 0.1 g. Feeding on plankton replaces as much of
+   the external encounter as it can. The plankton is a semichemostat at half
+   its carrying capacity.
+
+Steps 2–4 move food and mortality from the background to the modelled world
+but do not change any rate. So the coexistence state is the **same steady
+state for every strength of the links**: with the links at half strength,
+growth and mortality differ from those at nearly full strength only by
+rounding error (a relative difference below $10^{`r ceiling(log10(same_rates))`}$). The combined model had to recalibrate `erepro` at every point to
+hold its cod state fixed. Here that comes for free.
+
+Life histories are those of the earlier models (sprat to 15 g, cod to 10 kg,
+predator–prey mass ratios of 1000 and 30). Both species enter as 1 mg eggs,
+and there is no imposed stock–recruitment relation (`R_max = Inf`).
+
+## The two links
+
+The strength of each link is a fraction φ of the largest strength for which
+the background stays non-negative:
+
+* **`phi_prey`**: cod eating sprat. At 1, the cod that depend most on sprat
+  get all their food from sprat.
+* **`phi_larv`**: sprat eating cod eggs and larvae. At 1, the cod that sprat
+  eat most die only from sprat predation.
+
+At 0 a link is absent and its share stays in the background. φ is therefore
+a measure of how little the background dilutes a link.
+
+```{r}
+#| label: fig-shares
+#| fig-height: 4.2
+#| fig-cap: "What the modelled world accounts for in the coexistence state, with both links at φ = 0.96 and cod larvae feeding on plankton. Left: shares of the food of cod. Right: shares of the mortality of each species. The remainder is the fixed background."
+share_data <- rbind(
+    data.frame(panel = "Food of cod", w = w(p_max),
+               share = shares$prey["Cod", ], what = "Sprat"),
+    data.frame(panel = "Food of cod", w = w(p_max),
+               share = shares$resource["Cod", ], what = "Plankton"),
+    data.frame(panel = "Mortality", w = w(p_max),
+               share = shares$predation["Cod", ],
+               what = "Cod eaten by sprat"),
+    data.frame(panel = "Mortality", w = w(p_max)[present["Sprat", ]],
+               share = shares$predation["Sprat", present["Sprat", ]],
+               what = "Sprat eaten by cod"))
+share_data$what <- factor(share_data$what, levels = unique(share_data$what))
+ggplot(share_data, aes(w, share, colour = what)) +
+    geom_line(linewidth = 0.9) +
+    facet_wrap(~panel) +
+    scale_x_log10(breaks = 10^(-3:4),
+                  labels = c("0.001", "0.01", "0.1", "1", "10", "100",
+                             "1000", "10000")) +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent) +
+    scale_colour_manual(values = c("#2a78d6", "#1baf7a", "#eda100",
+                                   "#eb6834"), name = NULL) +
+    labs(x = "Body weight (g)", y = "Share of the power-law rate")
+```
+
+@fig-shares shows what the links can account for at most. The pattern follows
+from the shapes of the spectra. The abundance of one species falls as
+$w^{-1.2}$ among its juveniles. The community that the power-law rates stand
+for falls as $w^{-2.05}$. A species therefore matters to others mainly **near
+its own largest sizes**:
+
+* **Sprat as food.** Cod of about `r fmt(w_peak(shares$prey["Cod", ]), 1)` g,
+  which eat adult sprat, can get
+  `r fmt(100 * max(shares$prey["Cod", ]), 2)` % of their food from sprat. Cod
+  of 1 g get `r fmt(100 * share_at(shares$prey["Cod", ], 1), 1)` %, and cod
+  of 0.1 g `r fmt(100 * share_at(shares$prey["Cod", ], 0.1), 1)` %. The small
+  sprat that small cod eat are a negligible part of the food at that size.
+* **Cod as predators.** Cod cause up to
+  `r fmt(100 * max(shares$predation["Sprat", present["Sprat", ]]), 2)` % of the
+  mortality of the largest sprat, but only
+  `r fmt(100 * share_at(shares$predation["Sprat", ], 0.1), 1)` % of that of
+  0.1 g sprat.
+* **Sprat as predators.** Adult sprat can cause
+  `r fmt(100 * max(shares$predation["Cod", ]), 2)` % of the mortality of cod
+  larvae of `r fmt(w_peak(shares$predation["Cod", ]), 1)` g, and
+  `r fmt(100 * share_at(shares$predation["Cod", ], 0.001), 2)` % of that of
+  eggs.
+* **Plankton.** Sprat get nearly all their food from plankton
+  (`r fmt(100 * min(shares$resource["Sprat", present["Sprat", ]]), 2)` % or
+  more), which is what regulates them. Cod larvae up to 0.1 g can get
+  `r fmt(100 * share_at(shares$resource["Cod", ], 0.01), 3)` % of theirs from
+  plankton, and then compete with sprat.
+
+This already bears on the two mechanisms. Cultivation–depensation needs adult
+forage fish to eat the young of their predator, which the embedding allows at
+almost full strength. The mechanism of @vanleeuwen2008 needs juvenile cod to
+depend on small sprat, which it does not allow: in a power-law background the
+dependence of cod on sprat lies with cod of 30 g to 1 kg that eat adult sprat.
+
+## Cod larvae and plankton
+
+`setResourceInteraction()` moves food from the background to the plankton for
+both species. Cod larvae then share their food with sprat. The combined model
+deliberately kept this competition out by giving cod larvae a fixed food. Both
+variants are studied here:
+
+* **Cod larvae eat plankton** (`cod_resource = TRUE`): the workflow as it
+  stands.
+* **Cod larvae eat background food only** (`cod_resource = FALSE`): the
+  plankton share of the cod diet is handed back to the background. This is
+  the closer analogue of the combined model.
+
+## Numerics
+
+The model uses mizer's first-order upwind scheme without size diffusion, as
+the workflow produces it and as in the [cod–sprat model](index.html), on
+`r length(w(p_max))` size classes ($\Delta \ln w = `r fmt(dlnw, 2)`$). The
+combined model's second-order scheme with size diffusion was not carried over:
+with diffusion, `steadySingleSpecies()` leaves an unbalanced diffusive flux
+out of the largest size class of each species. The combined model avoided
+that with a senescence mortality, which would break the power law.
+
+Steady states other than the coexistence state are found by projection, with
+Euler steps of 0.1 yr. $R_0$ comes from `cod_R0()` of the combined model,
+which solves the discretised transport equation and is exact for this scheme.
+
+# Telling the mechanisms apart
+
+As in the combined model, the invasion fitness $R_0$ of a rare cod in the
+cod-free state is decomposed by taking one thing from the cod-free state and
+the rest from the coexistence state, where $R_0 = 1$:
+
+* **Prey**: the sprat that cod eat. This is the route of @vanleeuwen2008. It
+  is below 1 if cod find less sprat to eat without cod.
+* **Competition**: the plankton that cod eat. It is below 1 if the more
+  numerous sprat leave less plankton for cod larvae. This route is absent
+  when cod larvae eat background food only.
+* **Food**: both together, that is the growth and reproduction of cod.
+* **Larval predation**: the mortality of cod. This is
+  cultivation–depensation.
+* **Interaction** = $R_0$ / (food × larval predation). It is below 1 if hungry
+  cod linger at the sizes at which sprat eat them.
+
+$R_0 < 1$ means that cod cannot invade the cod-free state. In the combined
+model that implied two alternative stable states, because the cod state was
+stable. Here the coexistence state need not be stable, so its stability is
+checked separately: from the leading eigenvalue of `getStability()`, and by
+starting cod 20 % below and 20 % above it.
+
+# Results
+
+## The cod-free state
+
+Removing cod takes away part of the mortality of sprat, mostly that of the
+adults (@fig-shares). Sprat biomass then rises by a factor of
+`r range_text(on$sprat_free)`, depending on `phi_prey` only. The plankton
+that sprat graze falls, and with it the feeding level of sprat.
+
+```{r}
+#| label: fig-spectra
+#| fig-height: 4
+#| fig-cap: "The cod-free state relative to the coexistence state at the four points of @tbl-points: abundance of sprat and of plankton by size. Without cod there are more sprat, and they graze the plankton down. The first and last points have the same prey link, so their curves coincide."
+spec <- cases$spectra[cases$spectra$what != "Sprat feeding level", ]
+spec$point <- factor(spec$point, levels = pts$label)
+ggplot(spec[spec$w >= 1e-6, ], aes(w, ratio, colour = point)) +
+    geom_hline(yintercept = 1, colour = "grey45", linetype = "dashed") +
+    geom_line(linewidth = 0.9) +
+    facet_wrap(~what, scales = "free_x") +
+    scale_x_log10(labels = scales::label_log()) +
+    scale_y_log10() +
+    scale_colour_manual(values = c("#2a78d6", "#1baf7a", "#eda100",
+                                   "#eb6834"), name = NULL) +
+    labs(x = "Body weight (g)",
+         y = "Abundance without cod /\nabundance in the coexistence state") +
+    guides(colour = guide_legend(nrow = 2)) +
+    theme(legend.position = "bottom")
+```
+
+```{r}
+#| label: spectra-numbers
+spectra <- cases$spectra
+#' A column of the spectra at point i, at the size nearest to w0
+spec_at <- function(i, what, w0) {
+    d <- spectra[spectra$point == pts$label[i] & spectra$what == what, ]
+    d$ratio[which.min(abs(log(d$w / w0)))]
+}
+```
+
+Two things in @fig-spectra matter for what follows:
+
+* **There are more sprat of every size.** At the first point, with the
+  strongest prey link, the largest sprat (14 g) are
+  `r fmt(spec_at(1, "Sprat", 14), 2)` times as abundant without cod, because
+  cod no longer eat them. They lay more eggs, so the smallest sprat (1 mg)
+  are `r fmt(spec_at(1, "Sprat", 0.001), 2)` times as abundant. Sprat of 1 g
+  are `r fmt(spec_at(1, "Sprat", 1), 2)` times as abundant. No size that cod
+  eat becomes scarcer. In the model of @vanleeuwen2008 it is the other way
+  round: without cod, sprat produce *fewer* young.
+* **Sprat do not become stunted.** Their feeding level falls from 0.6 to
+  `r fmt(spec_at(1, "Sprat feeding level", 10), 2)` at 10 g, far above the
+  critical feeding level of 0.2. The plankton sits at half its carrying
+  capacity in the coexistence state, so it gives way only so far: it falls to
+  `r fmt(spec_at(1, "Plankton", 0.01), 2)` of its abundance at 0.01 g. In the
+  [cod–sprat model](index.html), adult sprat fed at 0.34 with cod and at
+  0.18–0.20, their starvation level, without.
+
+## The regime map
+
+```{r}
+#| label: fig-regime
+#| fig-height: 6.5
+#| fig-cap: "$R_0$ of a rare cod in the cod-free state over the strengths of the two links. The black line in the left panel is $R_0 = 1$: above it cod cannot invade. In the right panel cod cannot invade wherever `phi_prey` > 0. The symbols show what the coexistence state is (see text)."
+map <- scan
+map$log_R0 <- pmin(pmax(log10(map$R0), -2), 0.5)
+ggplot(map, aes(phi_prey, phi_larv)) +
+    geom_raster(aes(fill = log_R0)) +
+    # Without the prey link R0 is exactly 1, which is no boundary
+    geom_contour(data = map[map$phi_prey > 0, ], aes(z = log_R0), breaks = 0,
+                 colour = "black", linewidth = 0.9) +
+    geom_point(aes(shape = regime), size = 2.2) +
+    facet_wrap(~variant) +
+    scale_fill_gradient2(low = "#2a78d6", mid = "white", high = "#eb6834",
+                         midpoint = 0, limits = c(-2, 0.5),
+                         breaks = c(-2, -1, 0, 0.5),
+                         labels = c("≤ 0.01", "0.1", "1", "3"),
+                         name = expression(R[0] ~ "of cod in the cod-free state")) +
+    scale_shape_manual(values = c(1, 16, 17, 15, 4), name = NULL, drop = FALSE) +
+    scale_x_continuous(expand = c(0, 0), breaks = seq(0, 0.96, by = 0.24)) +
+    scale_y_continuous(expand = c(0, 0), breaks = seq(0, 0.96, by = 0.24)) +
+    labs(x = "Cod eating sprat, φ_prey",
+         y = "Sprat eating cod larvae, φ_larv") +
+    guides(fill = guide_colourbar(order = 1),
+           shape = guide_legend(order = 2, ncol = 1)) +
+    theme(legend.position = "bottom", legend.box = "vertical",
+          legend.key.width = unit(1.5, "cm"), panel.spacing = unit(1, "lines"))
+```
+
+@fig-regime shows the invasion fitness of cod in the cod-free state and, as
+symbols, what the coexistence state is. Every barrier needs `phi_prey` > 0:
+if cod do not hold sprat down, the cod-free state is the coexistence state
+without cod, and $R_0 = 1$.
+
+**Can cod invade?**
+
+* **Cod larvae eat background food only** (left). Without larval predation
+  cod invade, the more easily the more sprat they eat ($R_0$ up to
+  `r fmt(max(scan$R0), 2)`). Larval predation closes the cod-free state from
+  `phi_larv` ≈ `r range_text(theta_inv, 2)`. At the strongest links $R_0$ is
+  `r fmt(at(0.96, 0.96, FALSE)$R0, 2)`.
+* **Cod larvae eat plankton** (right). Cod cannot invade at any point with
+  `phi_prey` > 0. Without larval predation $R_0$ is
+  `r range_text(on$R0[on$cod_resource & on$phi_larv == 0])`, and at the
+  strongest links `r fmt(at(0.96, 0.96, TRUE)$R0, 2)`.
+
+**What is the coexistence state?**
+
+* **A stable cod state** (●) at `r n_regime(2, FALSE)` of the
+  `r sum(on$barrier & !on$cod_resource)` points with a barrier on the left,
+  and at `r n_regime(2, TRUE)` of `r sum(on$barrier & on$cod_resource)` on
+  the right. It needs a strong prey link and weak larval predation. Only
+  there is this model bistable in the way the combined model was. Even then
+  the basin can be small: at
+  `r sum(on$regime == regimes[2] & on$below_cod < 0.5)` of these points, cod
+  started 20 % below the state die out.
+* **The Allee threshold** (▲, ■) at most points with a barrier. The state has
+  one real positive eigenvalue, of up to
+  `r fmt(max(scan$lead_re), 2)`/yr. Cod started 20 % below it die out. Cod
+  started 20 % above it
+  * settle at, or cycle around, a state with more cod and fewer sprat (▲);
+  * or take over, and sprat die out (■). If cod larvae eat plankton, cod then
+    settle at up to `r fmt(max(on$above_cod[on$cod_resource]), 2)` times
+    their biomass in the coexistence state, limited by the plankton. If not,
+    nothing limits them and they grow without bound.
+* **An unstable state that cod cannot hold from either side** (×), at the
+  strongest links. Cod started above it deplete the sprat they depend on,
+  decline, and are then finished off by the recovering sprat.
+
+**Why is the coexistence state so often unstable?** With `R_max = Inf`, cod
+are regulated only through what they do to sprat and plankton. More cod mean
+fewer sprat, and that has three effects on cod:
+
+* less sprat to eat, which stabilises;
+* fewer larvae eaten, which destabilises;
+* more plankton for cod larvae, which destabilises.
+
+In the combined model cod had nothing but sprat to eat, so the first effect
+was strong. Here the background feeds cod whatever their number, and the
+first effect is strong only where `phi_prey` is large. The mechanisms that
+produce the Allee effect are the same ones that make the power-law state
+unstable.
+
+```{r}
+#| label: tbl-points
+#| tbl-cap: "Four points of the regime map. The factors of $R_0$ are explained in the previous section. The last two columns give cod and sprat biomass, relative to the coexistence state, 1000 years after cod are started 20 % above it (300 years where the state is stable)."
+knitr::kable(data.frame(
+    Point = pts$label,
+    φ_prey = pts$phi_prey,
+    φ_larv = pts$phi_larv,
+    `Cod larvae eat plankton` = ifelse(pts$cod_resource, "yes", "no"),
+    Prey = sprintf("%.2f", sapply(pt, `[[`, "prey")),
+    Competition = sprintf("%.2f", sapply(pt, `[[`, "competition")),
+    `Larval predation` = sprintf("%.2f", sapply(pt, `[[`, "larval_predation")),
+    R0 = sprintf("**%.2f**", sapply(pt, `[[`, "R0")),
+    `Growth rate of the instability (1/yr)` = ifelse(
+        sapply(pt, `[[`, "unstable"),
+        sprintf("%.3f", sapply(pt, `[[`, "lead_re")), "stable"),
+    `Cod from above` = biomass_text(sapply(pt, `[[`, "above_cod")),
+    `Sprat from above` = biomass_text(sapply(pt, `[[`, "above_sprat")),
+    check.names = FALSE), align = "lrrlrrrrrrr")
+```
+
+## Decomposition
+
+```{r}
+#| label: fig-decomposition
+#| fig-height: 5.5
+#| fig-cap: "The factors of $R_0$ along the strength of sprat predation on cod larvae, at two strengths of cod predation on sprat (rows). The prey factor is above 1 throughout: sprat as food work against the Allee effect."
+dec <- scan[scan$phi_prey %in% c(0.48, 0.96), ]
+factors <- c(prey = "Prey (sprat as food)",
+             competition = "Competition (plankton)",
+             larval_predation = "Larval predation",
+             R0 = "All together (R0)")
+dec_long <- do.call(rbind, lapply(names(factors), function(f) {
+    data.frame(dec[c("phi_prey", "phi_larv", "variant")],
+               factor = factors[[f]], value = dec[[f]])
+}))
+dec_long$factor <- factor(dec_long$factor, levels = factors)
+dec_long$row <- paste("φ_prey =", dec_long$phi_prey)
+# Without cod feeding on plankton there is no competition
+dec_long <- dec_long[!(dec_long$factor == factors[["competition"]] &
+                           dec_long$variant == levels(scan$variant)[1]), ]
+ggplot(dec_long, aes(phi_larv, value, colour = factor)) +
+    geom_hline(yintercept = 1, colour = "grey45", linetype = "dashed") +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 1.4) +
+    facet_grid(row ~ variant) +
+    scale_y_log10() +
+    scale_colour_manual(values = c("#eb6834", "#1baf7a", "#2a78d6",
+                                   "grey20"), name = NULL) +
+    labs(x = "Sprat eating cod larvae, φ_larv",
+         y = "R0 of a rare cod in the cod-free state") +
+    guides(colour = guide_legend(nrow = 2))
+```
+
+The factors in @fig-decomposition behave very differently:
+
+* **Prey** is `r range_text(on$prey)`: above 1 everywhere. It depends on
+  `phi_prey` only. A rare cod in the cod-free state finds more adult sprat
+  and grows faster through the sizes of 30 g to 1 kg. As in the
+  cultivation–depensation study, food works *against* depensation.
+* **Competition** is `r range_text(on$competition[on$cod_resource])` when
+  cod larvae eat plankton. It too depends on `phi_prey` only, through the
+  number of sprat in the cod-free state.
+* **Larval predation** is `r range_text(on$larval_predation[on$phi_larv > 0])`.
+  It needs both links: `phi_larv` for sprat to eat cod larvae, and
+  `phi_prey` for there to be more sprat without cod.
+* **Interaction** is `r range_text(on$interaction[on$cod_resource])` with
+  competition and 1 without. Cod larvae short of plankton grow slowly through
+  the sizes at which sprat eat them, so competition and larval predation
+  amplify each other. Sprat as prey do not interact with larval predation,
+  because cod eat sprat only once they have outgrown it.
+
+## Introductions
+
+```{r}
+#| label: fig-introductions
+#| fig-height: 4.5
+#| fig-cap: "Cod biomass after cod are introduced into the cod-free state at a multiple of their abundance in the coexistence state."
+intro$point <- factor(intro$point, levels = pts$label)
+intro_factors <- sort(unique(intro$factor))
+intro$introduced <- factor(paste0(100 * intro$factor, " %"),
+                           levels = paste0(100 * intro_factors, " %"))
+ggplot(intro, aes(time, cod, colour = introduced)) +
+    geom_hline(yintercept = 1, colour = "grey45", linetype = "dashed") +
+    geom_line(linewidth = 0.9) +
+    facet_wrap(~point, ncol = 4, labeller = label_wrap_gen(20)) +
+    scale_y_log10(labels = scales::label_log()) +
+    coord_cartesian(ylim = c(1e-6, 300)) +
+    scale_colour_manual(values = c("#b9d6f7", "#6aa5ea", "#2a78d6",
+                                   "#0d366b"),
+                        name = "Cod introduced (relative to the coexistence state)") +
+    labs(x = "Years after introduction",
+         y = "Cod biomass / biomass in\nthe coexistence state")
+```
+
+```{r}
+#| label: tbl-introductions
+#| tbl-cap: "Outcome of the introductions in @fig-introductions after 400 years: cod biomass relative to the coexistence state."
+intro_end <- intro[intro$time == max(intro$time), ]
+outcome <- biomass_text(intro_end$cod)
+outcomes <- sapply(intro_factors, function(f) {
+    outcome[intro_end$factor == f][match(pts$label,
+                                         intro_end$point[intro_end$factor == f])]
+})
+colnames(outcomes) <- paste0(100 * intro_factors, " %")
+knitr::kable(data.frame(Point = pts$label, outcomes, check.names = FALSE),
+             row.names = FALSE)
+```
+
+The introductions agree with the regime map (@fig-introductions,
+@tbl-introductions). At all four points, 1 % and 30 % of the coexistence
+abundance die out. An introduction at or above the coexistence abundance
+establishes at the first three points:
+
+* where the coexistence state is stable, cod settle there;
+* where it is the threshold, cod pass it and settle above it, with sprat at
+  `r fmt(intro_end$sprat[intro_end$point == pts$label[2] & intro_end$factor == 1], 2)`
+  of their coexistence biomass at the second point, and extinct at the
+  third.
+
+At the fourth point even three times the coexistence abundance dies out.
+
+Note that these introductions go into the cod-free state, where sprat are
+more abundant than in the coexistence state. The coexistence abundance of
+cod is therefore not itself the threshold.
+
+## Fishing
+
+Cod fishing uses the length-selective trawl of the earlier models, so
+$F_\text{cod}$ is the fishing mortality on fully selected cod. Two cod states
+are followed, at the first two points of @tbl-points:
+
+* the coexistence state, where it is stable;
+* where it is the threshold, the state that cod reach from above it. That
+  state has `r fmt(up2$Cod[1], 2)` times the cod and
+  `r fmt(up2$Sprat[1], 2)` times the sprat of the coexistence state, and no
+  longer has power-law rates.
+
+Each step projects the model until every biomass changes by less than
+$10^{-5}$/yr, starting from the state of the previous step. The downward
+sweep starts from the cod-free state, with cod topped up to $10^{-6}$ of
+their coexistence abundance before each step.
+
+```{r}
+#| label: fig-fishing
+#| fig-height: 5
+#| fig-cap: "Equilibrium biomass under increasing (solid, with a point at each step, from the cod state) and decreasing (dashed, from the cod-free state with a cod seed) cod fishing, for the two cod states. Biomasses are relative to the unfished coexistence state. Note the different scales of the fishing mortality."
+# Draw only the branches of steady states, not the jumps between them: each
+# sweep is split where cod move between the abundant state and the depleted
+# one
+settled <- fb[fb$converged, ]
+settled$segment <- ave(as.numeric(settled$Cod > abundant),
+                       paste(settled$case, settled$sweep),
+                       FUN = function(a) cumsum(c(0, diff(a) != 0)))
+long <- rbind(transform(settled, species = "Sprat", biomass = Sprat),
+              transform(settled, species = "Cod", biomass = Cod))
+long$species <- factor(long$species, levels = c("Sprat", "Cod"))
+ggplot(long, aes(F_cod, biomass, colour = species)) +
+    geom_line(aes(linetype = sweep,
+                  group = interaction(species, sweep, segment)),
+              linewidth = 0.9) +
+    geom_point(data = long[long$sweep == fishing$sweeps[1], ], size = 1.2) +
+    facet_wrap(~case, scales = "free_x") +
+    scale_y_continuous(trans = scales::pseudo_log_trans(sigma = 1e-3),
+                       breaks = c(0, 1e-3, 1e-2, 0.1, 1),
+                       labels = c("0", "0.001", "0.01", "0.1", "1")) +
+    scale_colour_manual(values = col_species) +
+    labs(x = "Cod fishing mortality F_cod (1/yr)",
+         y = "Equilibrium biomass relative to the\nunfished coexistence state (pseudo-log scale)",
+         colour = NULL, linetype = NULL) +
+    guides(colour = guide_legend(order = 1),
+           linetype = guide_legend(order = 2)) +
+    theme(legend.position = "bottom", legend.box = "vertical")
+```
+
+Both cod states are far more fragile than the cod state of the combined
+model, which persisted up to a fishing mortality of 0.27/yr (@fig-fishing):
+
+* **The stable coexistence state** persists at
+  $F_\text{cod}$ = `r last_F(up1)`/yr, with cod at
+  `r fmt(up1$Cod[up1$F_cod == last_F(up1)], 2)` of their unfished biomass, and
+  collapses at `r collapse_F(up1)`/yr. The state is only weakly damped: cod
+  return to it at about `r fmt(pt[[1]]$below_return, 2)`/yr. The little of
+  their food that responds to them cannot make up for even a small extra
+  mortality.
+* **The cod state above the threshold** persists at
+  $F_\text{cod}$ = `r last_F(up2)`/yr, with cod at
+  `r fmt(up2$Cod[up2$F_cod == last_F(up2)], 2)` times their coexistence
+  biomass,
+  and collapses at `r collapse_F(up2)`/yr.
+* **Cod do not return** at any fishing mortality in either case, because a
+  rare cod cannot invade the cod-free state
+  ($R_0$ = `r fmt(sf1$R0[sf1$F_sprat == 0], 2)` and
+  `r fmt(sf2$R0[sf2$F_sprat == 0], 2)`).
+
+```{r}
+#| label: tbl-sprat-fishery
+#| tbl-cap: "A fishery on sprat above 1 g, without cod fishing: the invasion fitness of cod in the cod-free state, and cod biomass in the cod state relative to the unfished coexistence state."
+sprat_table <- data.frame(
+    `Sprat fishing F (1/yr)` = sf1$F_sprat,
+    a = sprintf("%.2f", sf1$R0),
+    b = ifelse(sf1$cod < alive, "dies out", sprintf("%.2f", sf1$cod)),
+    c = sprintf("%.2f", sf2$R0[match(sf1$F_sprat, sf2$F_sprat)]),
+    d = ifelse(sf2$cod < alive, "dies out",
+               sprintf("%.2f", sf2$cod))[match(sf1$F_sprat, sf2$F_sprat)],
+    check.names = FALSE)
+names(sprat_table)[2:5] <- c("R0, first point", "Cod, first point",
+                             "R0, second point", "Cod, second point")
+knitr::kable(sprat_table, align = "rrrrr")
+```
+
+@vanleeuwen2008 proposed thinning the sprat to let cod recover, and in the
+combined model a sprat fishery did open the way back. Here it cuts both ways
+(@tbl-sprat-fishery):
+
+* **It thins the sprat that eat cod larvae**, which raises $R_0$ in the
+  cod-free state at first.
+* **It also takes the adult sprat that cod eat.** At the first point, where
+  cod depend most on sprat, $R_0$ peaks at
+  `r fmt(max(sf1$R0), 2)` and never reaches 1. At the second point it exceeds
+  1 at $F$ = `r paste(sf2$F_sprat[sf2$R0 > 1], collapse = " and ")`/yr, so
+  there a sprat fishery lets cod invade.
+* **It lowers cod in the cod state in both cases.** At the first point cod
+  die out at $F$ = `r min(sf1$F_sprat[sf1$cod < alive])`/yr.
+
+## Sensitivity
+
+```{r}
+#| label: tbl-sensitivity
+#| tbl-cap: "The second point of @tbl-points with one parameter changed at a time. The last two columns give the range of cod biomass, relative to the coexistence state, over the last 100 of 1000 years after a start 20 % above it."
+knitr::kable(data.frame(
+    Variant = sens$variant,
+    `Sprat without cod` = sprintf("%.2f×", sens$sprat_free),
+    Prey = sprintf("%.2f", sens$prey),
+    Competition = sprintf("%.2f", sens$competition),
+    `Larval predation` = sprintf("%.2f", sens$larval_predation),
+    R0 = sprintf("**%.2f**", sens$R0),
+    `Growth rate of the instability (1/yr)` = sprintf("%.3f", sens$lead_re),
+    `Cod from above, min` = biomass_text(sens$above_cod_min),
+    `Cod from above, max` = biomass_text(sens$above_cod_max),
+    check.names = FALSE), align = "lrrrrrrrr")
+```
+
+@tbl-sensitivity varies what sets how strongly the species respond, at the
+second point of @tbl-points:
+
+* **The barrier is robust.** $R_0$ stays between
+  `r fmt(min(sens$R0), 2)` and `r fmt(max(sens$R0), 2)`, and the prey factor
+  stays above 1.
+* **Plankton that gives way less** (resource level 0.8) lets sprat increase
+  more without cod. Larval predation then matters more and competition
+  slightly less.
+* **Sprat and cod closer to starvation** (feeding level 0.4) strengthen
+  competition, but strengthen the prey factor against it too. Sprat still do
+  not become stunted.
+* **What happens above the threshold is not robust.** Cod settle, cycle
+  (resource level 0.2) or die out (feeding level 0.8), depending on the
+  variant.
+* **The numerics do not matter much**: 320 size classes instead of 200 change
+  $R_0$ by `r fmt(100 * abs(sens$R0[sens$variant == "320 size classes"] / sens$R0[sens$variant == "Baseline"] - 1), 1)` %.
+
+## Density dependence in cod reproduction
+
+```{r}
+#| label: reproduction
+bh <- cases$reproduction
+bh$stable <- bh$lead_re < 1e-6
+bh$barrier <- bh$R0 < 0.999
+```
+
+The instability comes from cod having no density dependence of their own. The
+mizerEcopath workflow normally ends by giving each species a Beverton–Holt
+stock–recruitment relation with a chosen reproduction level $L$, the ratio of
+recruitment to its maximum. That was tried for cod at `r nrow(bh)` points
+(`phi_prey` 0.48 and 0.96, `phi_larv` 0.24 and 0.72, with and without cod
+larvae eating plankton, $L$ = 0.5 and 0.8). It does not restore the
+bistability of the combined model:
+
+* **It stabilises the coexistence state** at
+  `r sum(bh$stable)` of the `r nrow(bh)` points.
+* **It weakens the barrier.** To keep the coexistence state a steady state,
+  `erepro` rises by a factor $1/(1-L)$, and with it $R_0$ at low density. The
+  cod-free state stays closed only where $R_0$ was below $1 - L$:
+  at `r sum(bh$barrier)` of the `r nrow(bh)` points.
+* **Never both.** At all `r sum(bh$barrier)` points with a barrier the
+  coexistence state is still unstable, and at all `r sum(bh$stable)` points
+  where it is stable cod invade the cod-free state.
+
+A stable coexistence state needs the density dependence at that state to
+outweigh the positive feedback there. A closed cod-free state needs the
+positive feedback, summed from no cod up to the coexistence abundance, to
+outweigh $1/(1-L)$. Both hold only if the positive feedback is much stronger
+at low cod abundance than at the coexistence abundance. Here it is not.
+
+# Comparison with the combined model
+
+| | [Combined model](combined_model.html) | This model |
+|:--|:--|:--|
+| Community | Cod, sprat, plankton | The same, in a fixed power-law background |
+| Cod state | Held fixed by recalibrating `erepro` | The same steady state for all link strengths, by construction |
+| Sprat as food for cod | Barrier (the mechanism of Van Leeuwen et al.) for early diet shifts | Never a barrier: raises $R_0$ |
+| Sprat eating cod larvae | Barrier | Barrier, down to a factor `r fmt(min(scan$larval_predation), 2)` |
+| Competition for plankton | Excluded | Optional. A barrier when included |
+| The two barriers together | Amplify each other | Larval predation and competition amplify each other. Sprat as food does not interact |
+| Cod state | Stable up to moderate larval predation | Stable only at a strong prey link and weak larval predation. Otherwise the threshold |
+| Numerics | Second order, size diffusion | First-order upwind |
+
+# Caveats
+
+* **The background is fixed.** It feeds any number of cod and kills at an
+  unchanging rate. That removes density dependence that a real community
+  would supply, and is why cod can grow without bound above the threshold. A
+  background that gave way under pressure would behave between this model
+  and the combined model.
+* **One number scales each link.** The size pattern of each link (@fig-shares)
+  follows from the kernels and the spectra and is not a free choice. Small
+  cod cannot be made to depend on small sprat without a kernel that changes
+  with size.
+* **One biomass ratio.** The biomasses of cod and sprat are those of the
+  [cod–sprat model](index.html). Their ratio decides how much sprat
+  mortality cod can account for when cod depend fully on sprat.
+* **Sprat respond weakly to food.** With a feeding level of 0.6, a critical
+  level of 0.2 and plankton at half its capacity, sprat cannot become
+  stunted. @tbl-sensitivity varies these.
+* **Stability.**
+  * `getStability()` returns a ladder of real eigenvalues between about
+    $-10^{-3}$/yr and rounding error, from plankton sizes that no fish eats.
+    They hide how strongly a stable state is damped, so only instability is
+    read from the eigenvalues.
+  * The fate of cod above the threshold comes from one projection, started
+    with cod 20 % above the coexistence state and sprat unchanged, and
+    judged after 1000 years. Cycles were not characterised.
+* **Numerics.** First-order upwind on 200 size classes, with its numerical
+  diffusion. With 320 classes $R_0$ at the second point of @tbl-points
+  changes by `r fmt(100 * abs(sens$R0[sens$variant == "320 size classes"] / sens$R0[sens$variant == "Baseline"] - 1), 1)` %.
+* **Internals.** `cod_R0()` calls mizer internals and was written against
+  mizer 3.4.0.9001. The results here were computed with mizer
+  `r res$mizer_version` and mizerEcopath `r res$mizerEcopath_version`.
+
+# Possible next steps
+
+* A background that responds: for example a second, depletable resource that
+  stands for the other prey of cod, with its own resource level.
+* A diet of cod that shifts with size, so that small cod can depend on small
+  sprat and the mechanism of @vanleeuwen2008 gets a fair chance in a
+  power-law community.
+* Sprat that are closer to starvation in the coexistence state (a lower
+  feeding level for sprat only), so that they can become stunted.
+* The fishing thresholds across the regime map, and a sprat fishery as a way
+  back from the cod-free state.
+
+# Reproducing this document
+
+| File | Contents |
+|:--|:--|
+| `R/background_model.R` | The model, the cod-free state, the stability measures and the decomposition of $R_0$ |
+| `background/run_scan.R` | The scan over the two links; writes `background/scan.rds` |
+| `background/run_cases.R` | Spectra, introductions, sensitivity and density-dependent reproduction at single points; writes `background/cases.rds` |
+| `background/run_fishing.R` | The branches under cod fishing and the effect of a sprat fishery; writes `background/fishing.rds` |
+| `background_model.qmd` | This document; it reads the three results files |
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript background/run_scan.R
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript background/run_cases.R
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 Rscript background/run_fishing.R
+quarto render background_model.qmd
+```
+
+The scan takes about an hour on 8 cores, and the other two scripts about 15
+and 5 minutes.
+The model needs the mizerEcopath package, which brings in mizerFromEcopath.
+
+This document was rendered with mizer `r packageVersion("mizer")`,
+mizerEcopath `r packageVersion("mizerEcopath")` and `r R.version.string`.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

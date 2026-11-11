@@ -5,3 +5,4 @@ project:
   render:
     - how_cod_shapes_its_world.qmd
     - combined_model.qmd
+    - background_model.qmd
